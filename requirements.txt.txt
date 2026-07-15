@@ -1,0 +1,5 @@
+streamlit
+mysqlclient
+pandas
+openpyxl
+SQLAlchemy

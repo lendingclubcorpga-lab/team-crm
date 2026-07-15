@@ -1,5 +1,6 @@
 streamlit
-mysqlclient
+pymysql
+cryptography
 pandas
 openpyxl
-SQLAlchemy
+sqlalchemy

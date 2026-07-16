@@ -199,10 +199,7 @@ else:
                         
                         df_final = df_to_import[['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']]
                         
-                        # Loop safely through cleaned rows without using complex conditional queries
+                        # Clean single-line script wrapper avoids syntax-breaking string configurations
+                        sql_upsert_raw = "INSERT INTO clients (fname, lname, email, dob, address, city, state, zip, phone, bank, status) VALUES (:fname, :lname, :email, :dob, :address, :city, :state, :zip, :phone, :bank, :status) ON CONFLICT(email) DO UPDATE SET fname=excluded.fname, lname=excluded.lname, phone=excluded.phone, dob=excluded.dob, address=excluded.address, city=excluded.city, state=excluded.state, zip=excluded.zip, bank=excluded.bank, status=excluded.status;"
+                        
                         with conn.session as session:
-                            for _, row in df_final.iterrows():
-                                session.execute(text("""
-                                    INSERT INTO clients (fname, lname, email, dob, address, city, state, zip, phone, bank, status) 
-                                    VALUES (:fname, :lname, :email, :dob, :address, :city, :state, :zip, :phone, :bank, :status)
-                                    ON CONFLICT(email) DO UPDATE SET 

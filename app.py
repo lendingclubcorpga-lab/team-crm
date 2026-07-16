@@ -4,7 +4,7 @@ from sqlalchemy import text, bindparam
 import io
 
 # Page Setup
-st.set_page_config(page_title="Managed Corporate CRM", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="Managed AVANT CRM", layout="wide", page_icon="🛡️")
 
 # ⚡ CONNECT TO MANAGED STREAMLIT STORAGE
 try:
@@ -35,7 +35,7 @@ if "authenticated" not in st.session_state:
 
 if not st.session_state["authenticated"]:
     st.title("🔐 Secure CRM Terminal")
-    entered_pass = st.text_input("Enter Corporate CRM Access Password", type="password")
+    entered_pass = st.text_input("Enter AVANT CRM Access Password", type="password")
 
     if st.button("Unlock Dashboard"):
         if entered_pass == st.secrets["auth_keys"]["admin_password"]:
@@ -55,7 +55,7 @@ if not st.session_state["authenticated"]:
 # ----------------------------------------------------
 # LAYER 2: AUTHENTICATED CORE DASHBOARD
 # ----------------------------------------------------
-st.title("🛡️ Secure Corporate CRM Node")
+st.title("🛡️ Secure AVANT CRM Node")
 st.caption(f"Access Tier: {'👑 Super Admin (Full Read/Write/Upload)' if st.session_state['is_admin'] else '👥 Team Member (Single Search Mode)'}")
 
 if st.sidebar.button("Logout of Terminal"):

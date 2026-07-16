@@ -207,4 +207,3 @@ with tab2:
     # View files permanently stored in Managed Memory (Accessible to everyone)
     st.markdown("---")
     st.subheader("🃟 Permanently Saved Files Registry")
-    try:

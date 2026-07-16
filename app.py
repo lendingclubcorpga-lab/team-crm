@@ -13,8 +13,18 @@ except Exception as e:
     st.error(f"Storage Error: Failed to safely initiate backend connection pool. Details: {e}")
     st.stop()
 
-# AUTOMATIC DATABASE INITIALIZATION (Expanded to hold all 10 custom columns)
+# 🔄 FORCE STRUCTURE SYNCHRONIZATION: Wipe old tables to support expanded 11-column fields
 with conn.session as init_session:
+    # Check if the old structure is active by attempting to read fname
+    try:
+        init_session.execute(text("SELECT fname FROM clients LIMIT 1;"))
+    except Exception:
+        # If it fails, the database is outdated. Force drop and update structural schema.
+        init_session.execute(text("DROP TABLE IF EXISTS clients;"))
+        init_session.execute(text("DROP TABLE IF EXISTS crm_files;"))
+        init_session.commit()
+
+    # Re-initialize with all custom client columns
     init_session.execute(text("""
         CREATE TABLE IF NOT EXISTS clients (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -194,18 +204,7 @@ else:
                         # Filter to only your exact 11 target columns
                         df_final = df_to_import[['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']]
                         
-                        # Stream straight to SQLite table natively (avoids all loop syntax errors)
                         with conn.session as session:
                             df_final.to_sql("clients", con=session.connection(), if_exists="append", index=False)
                             session.commit()
                         st.success(f"📈 Registry Synced: Bulk-loaded records successfully!")
-                    else:
-                        st.success("✅ File backup logged permanently into storage vault.")
-                    st.rerun()
-                except Exception as db_err:
-                    st.error(f"Database Write Failure: {db_err}")
-
-        # View historical file transactions
-        st.markdown("---")
-        st.subheader("🗃️ Permanently Saved Files Registry")
-        

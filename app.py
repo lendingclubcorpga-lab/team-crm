@@ -191,11 +191,9 @@ else:
                                 r_email = str(row.get('email', '')).strip()
                                 r_phone = str(row.get('phone', '')).strip() if pd.notna(row.get('phone')) else ''
                                 
-                                # Skip row if it doesn't have vital credentials
                                 if not r_email or not r_phone:
                                     continue
                                 
-                                # Pull other attributes safely mapping defaults if missing
                                 r_fname = str(row.get('fname', '')).strip() if pd.notna(row.get('fname')) else ''
                                 r_lname = str(row.get('lname', '')).strip() if pd.notna(row.get('lname')) else ''
                                 r_dob = str(row.get('dob', '')).strip() if pd.notna(row.get('dob')) else ''
@@ -203,3 +201,4 @@ else:
                                 r_city = str(row.get('city', '')).strip() if pd.notna(row.get('city')) else ''
                                 r_state = str(row.get('state', '')).strip() if pd.notna(row.get('state')) else ''
                                 r_zip = str(row.get('zip', '')).strip() if pd.notna(row.get('zip')) else ''
+                                r_bank = str(row.get('bank', '')).strip() if pd.notna(row.get('bank')) else ''

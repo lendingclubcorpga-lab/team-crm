@@ -199,10 +199,7 @@ else:
                         
                         df_final = df_to_import[['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']]
                         
-                        # Process upsert natively through a dedicated connection mapping loop
+                        # Clean single-line query string removes formatting/quote conflicts entirely
+                        upsert_query_string = "INSERT INTO clients (fname, lname, email, dob, address, city, state, zip, phone, bank, status) VALUES (:fname, :lname, :email, :dob, :address, :city, :state, :zip, :phone, :bank, :status) ON CONFLICT(email) DO UPDATE SET fname=excluded.fname, lname=excluded.lname, phone=excluded.phone, dob=excluded.dob, address=excluded.address, city=excluded.city, state=excluded.state, zip=excluded.zip, bank=excluded.bank, status=excluded.status;"
+                        
                         with conn.session as s2:
-                            for _, row in df_final.iterrows():
-                                s2.execute(text("""
-                                    INSERT INTO clients (fname, lname, email, dob, address, city, state, zip, phone, bank, status) 
-                                    VALUES (:fname, :lname, :email, :dob, :address, :city, :state, :zip, :phone, :bank, :status)
-                                    ON CONFLICT(email) DO UPDATE SET 

@@ -99,7 +99,7 @@ with tab1:
             
             st.markdown("### 📋 Fast Profile Pull-Up Summary")
             selected_id = st.selectbox("Select profile ID to extract exact contact credentials", data_ledger["id"].tolist())
-            matched_profile = data_ledger[data_ledger["id"] == selected_id].iloc[0]
+            matched_profile = data_ledger[data_ledger["id"] == selected_id].iloc
             
             c1, c2, c3 = st.columns(3)
             c1.metric("Selected Contact Name", str(matched_profile["name"]))

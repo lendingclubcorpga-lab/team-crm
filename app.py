@@ -202,9 +202,14 @@ with tab2:
     # View files permanently stored in Managed Memory (Accessible to everyone)
     st.markdown("---")
     st.subheader("🃟 Permanently Saved Files Registry")
+      # View files permanently stored in Managed Memory (Accessible to everyone)
+    st.markdown("---")
+    st.subheader("🃟 Permanently Saved Files Registry")
     try:
         saved_files_df = conn.query("SELECT id, file_name, file_extension, uploaded_at FROM crm_files ORDER BY id DESC;", ttl=0)
         if not saved_files_df.empty:
             st.dataframe(saved_files_df, use_container_width=True, hide_index=True)
         else:
             st.info("No raw external attachments are currently stored inside the database.")
+    except Exception as read_err:
+        st.error(f"Could not load file transaction logs: {read_err}")

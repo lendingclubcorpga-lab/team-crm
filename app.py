@@ -208,4 +208,4 @@ else:
         # View historical file transactions
         st.markdown("---")
         st.subheader("🗃️ Permanently Saved Files Registry")
-        try:
+        

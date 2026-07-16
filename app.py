@@ -66,60 +66,70 @@ if not st.session_state["authenticated"]:
 # LAYER 2: AUTHENTICATED CORE DASHBOARD
 # ----------------------------------------------------
 st.title("🛡️ Secure Corporate CRM Node")
-st.caption(f"Access Tier: {'👑 Super Admin (Full Read/Write/Upload)' if st.session_state['is_admin'] else '👥 Team Member (Strict Read-Only)'}")
+st.caption(f"Access Tier: {'👑 Super Admin (Full Read/Write/Upload)' if st.session_state['is_admin'] else '👥 Team Member (Single Search Mode)'}")
 
 if st.sidebar.button("Logout of Terminal"):
     st.session_state["authenticated"] = False
     st.session_state["is_admin"] = False
     st.rerun()
 
-tab1, tab2 = st.tabs(["🔍 Phone Pull-Up & Records", "📦 Database Storage Ledger"])
-
 # ----------------------------------------------------
-# TAB 1: SEARCH & READ-ONLY DATA VIEWER
+# BRANCH A: STRICT TEAM WORKFLOW (Search Only, Files Hidden)
 # ----------------------------------------------------
-with tab1:
+if not st.session_state["is_admin"]:
     st.subheader("📞 Customer Contact Pull-Up Terminal")
-    search_input = st.text_input("Search Customer Registry (Query by Name, Email, or Phone Number)")
+    search_input = st.text_input("Enter exact phone number or name to extract a profile")
     
-    try:
-        if search_input:
+    if search_input:
+        try:
             query_str = """
-                SELECT id, name, email, phone, status, created_at 
+                SELECT id, name, email, phone, status 
                 FROM clients 
                 WHERE name LIKE :param OR email LIKE :param OR phone LIKE :param 
                 ORDER BY id DESC;
             """
             data_ledger = conn.query(query_str, params={"param": f"%{search_input}%"}, ttl=0)
-        else:
-            data_ledger = conn.query("SELECT id, name, email, phone, status, created_at FROM clients ORDER BY id DESC;", ttl=0)
             
-        if not data_ledger.empty:
-            st.dataframe(data_ledger, use_container_width=True, hide_index=True)
-            
-            st.markdown("### 📋 Fast Profile Pull-Up Summary")
-            selected_id = st.selectbox("Select profile ID to extract exact contact credentials", data_ledger["id"].tolist())
-            matched_profile = data_ledger[data_ledger["id"] == selected_id].iloc
-            
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Selected Contact Name", str(matched_profile["name"]))
-            c2.metric("Extracted Phone Number", str(matched_profile["phone"]))
-            c3.metric("Account Status", str(matched_profile["status"]))
-        else:
-            st.info("No matching records located inside the registry.")
-            
-    except Exception as ex:
-        st.error(f"Storage Read Violation: {ex}")
+            if not data_ledger.empty:
+                st.success(f"Record Found! Match total: {len(data_ledger)}")
+                
+                # Show matches cleanly as profile cards instead of a massive table spreadsheet
+                for index, row in data_ledger.iterrows():
+                    with st.container(border=True):
+                        c1, c2, c3 = st.columns(3)
+                        c1.markdown(f"**👤 Customer Name:**  \n{row['name']}")
+                        c2.markdown(f"**📞 Phone Number:**  \n{row['phone']}")
+                        c3.markdown(f"**✉️ Email Address:**  \n{row['email']}")
+            else:
+                st.warning("No matching profile exists inside the secure registry.")
+        except Exception as ex:
+            st.error(f"Search Execution Fault: {ex}")
+    else:
+        st.info("💡 Ready for use. Enter a phone number above to pull data.")
 
 # ----------------------------------------------------
-# TAB 2: SECURE UPLOAD & SYSTEM ENGINE
+# BRANCH B: ADMIN WORKFLOW (Full Power Management Ledger)
 # ----------------------------------------------------
-with tab2:
-    st.subheader("🗄️ Streamlit Cloud Permanent Vault")
+else:
+    tab1, tab2 = st.tabs(["🔍 Global Master Directory", "📦 Cloud Database Storage Ledger"])
     
-    if not st.session_state["is_admin"]:
-        st.error("⛔ Access Restriction Notice: Your operational tier does not possess database write permission.")
-    else:
+    with tab1:
+        st.subheader("📊 Master Customer Database View")
+        admin_search = st.text_input("🔍 Filter Registry (Real-time tracking)")
+        
+        try:
+            if admin_search:
+                query_str = "SELECT id, name, email, phone, status, created_at FROM clients WHERE name LIKE :p OR email LIKE :p OR phone LIKE :p ORDER BY id DESC;"
+                df_admin = conn.query(query_str, params={"p": f"%{admin_search}%"}, ttl=0)
+            else:
+                df_admin = conn.query("SELECT id, name, email, phone, status, created_at FROM clients ORDER BY id DESC;", ttl=0)
+                
+            st.dataframe(df_admin, use_container_width=True, hide_index=True)
+        except Exception as ex:
+            st.error(f"Admin Directory Error: {ex}")
+            
+    with tab2:
+        st.subheader("🗄️ Streamlit Cloud Permanent Vault")
         st.markdown("#### 🚀 Admin Universal File Uploader")
         uploaded_file = st.file_uploader("Upload spreadsheet registry or backup file (Supports CSV, XLSX, PDF, etc.)")
         
@@ -140,30 +150,22 @@ with tab2:
                         df_to_import = pd.read_csv(uploaded_file)
                     else:
                         df_to_import = pd.read_excel(uploaded_file)
-                    
-                    st.info(f"📊 Spreadsheet detected! Found {len(df_to_import)} row(s). Columns found: {', '.join(df_to_import.columns)}")
+                    st.info(f"📊 Spreadsheet parsed successfully! Detected {len(df_to_import)} rows.")
                 except Exception as parse_err:
                     st.error(f"Could not parse spreadsheet text: {parse_err}")
             
             if st.button("Commit File & Process Registry Matrix"):
                 try:
                     with conn.session as session:
-                        # Step A: Save raw file data
-                        insert_file_query = text("""
-                            INSERT INTO crm_files (file_name, file_extension, file_data)
-                            VALUES (:name, :ext, :data);
-                        """)
-                        session.execute(insert_file_query, {
-                            "name": file_name,
-                            "ext": file_extension,
-                            "data": binary_payload
+                        # Step A: Save raw backup file data
+                        session.execute(text("INSERT INTO crm_files (file_name, file_extension, file_data) VALUES (:name, :ext, :data);"), {
+                            "name": file_name, "ext": file_extension, "data": binary_payload
                         })
                         
-                        # Step B: Unpack rows directly into the permanent search catalog
+                        # Step B: Merge columns and write to searchable client roster
                         rows_inserted = 0
                         if df_to_import is not None:
                             for _, row in df_to_import.iterrows():
-                                # Handle separate first and last name headers
                                 if 'fname' in df_to_import.columns or 'lname' in df_to_import.columns:
                                     f_part = str(row.get('fname', '')).strip() if pd.notna(row.get('fname')) else ''
                                     l_part = str(row.get('lname', '')).strip() if pd.notna(row.get('lname')) else ''
@@ -178,32 +180,25 @@ with tab2:
                                 if not r_name or not r_email:
                                     continue
                                     
-                                insert_client_query = text("""
-                                    INSERT INTO clients (name, email, phone, status) 
-                                    VALUES (:name, :email, :phone, :status)
-                                    ON CONFLICT(email) DO UPDATE SET
-                                        name = excluded.name,
-                                        phone = excluded.phone,
-                                        status = excluded.status;
-                                """)
-                                session.execute(insert_client_query, {
-                                    "name": r_name,
-                                    "email": r_email,
-                                    "phone": r_phone,
-                                    "status": r_status
-                                })
+                                session.execute(text("""
+                                    INSERT INTO clients (name, email, phone, status) VALUES (:name, :email, :phone, :status)
+                                    ON CONFLICT(email) DO UPDATE SET name=excluded.name, phone=excluded.phone, status=excluded.status;
+                                """), {"name": r_name, "email": r_email, "phone": r_phone, "status": r_status})
                                 rows_inserted += 1
-                        
                         session.commit()
                         
-                    st.success(f"✅ Success! File logged in managed permanent memory.")
-                    if rows_inserted > 0:
-                        st.success(f"📈 Registry Synced: Extracted and added {rows_inserted} contacts successfully!")
+                    st.success("✅ File logged permanently and metrics unpacked successfully!")
                     st.rerun()
-                    
                 except Exception as db_err:
-                    st.error(f"Write Failure: Cloud storage engine error. Details: {db_err}")
+                    st.error(f"Write Failure: {db_err}")
 
-    # View files permanently stored in Managed Memory (Accessible to everyone)
-    st.markdown("---")
-    st.subheader("🃟 Permanently Saved Files Registry")
+        # View uploaded file table records (Only accessible inside admin dashboard)
+        st.markdown("---")
+        st.subheader("🗃️ Permanently Saved Files Registry")
+        try:
+            saved_files_df = conn.query("SELECT id, file_name, file_extension, uploaded_at FROM crm_files ORDER BY id DESC;", ttl=0)
+            if not saved_files_df.empty:
+                st.dataframe(saved_files_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("No raw external attachments are currently stored inside the database.")
+        except Exception as read_err:

@@ -34,7 +34,7 @@ if "authenticated" not in st.session_state:
     st.session_state["is_admin"] = False
 
 if not st.session_state["authenticated"]:
-    st.title("🔐 Secure CRM Terminal")
+    st.title("🔐 AVANT CRM Terminal")
     entered_pass = st.text_input("Enter AVANT CRM Access Password", type="password")
 
     if st.button("Unlock Dashboard"):

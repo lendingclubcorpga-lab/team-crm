@@ -22,32 +22,8 @@ with conn.session as init_session:
         init_session.execute(text("DROP TABLE IF EXISTS crm_files;"))
         init_session.commit()
 
-    init_session.execute(text("""
-        CREATE TABLE IF NOT EXISTS clients (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fname TEXT DEFAULT '',
-            lname TEXT DEFAULT '',
-            email TEXT NOT NULL UNIQUE,
-            dob TEXT DEFAULT '',
-            address TEXT DEFAULT '',
-            city TEXT DEFAULT '',
-            state TEXT DEFAULT '',
-            zip TEXT DEFAULT '',
-            phone TEXT NOT NULL,
-            bank TEXT DEFAULT '',
-            status TEXT DEFAULT 'Lead',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-    """))
-    init_session.execute(text("""
-        CREATE TABLE IF NOT EXISTS crm_files (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_name TEXT NOT NULL,
-            file_extension TEXT NOT NULL,
-            file_data BLOB NOT NULL,
-            uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-    """))
+    init_session.execute(text("CREATE TABLE IF NOT EXISTS clients (id INTEGER PRIMARY KEY AUTOINCREMENT, fname TEXT DEFAULT '', lname TEXT DEFAULT '', email TEXT NOT NULL UNIQUE, dob TEXT DEFAULT '', address TEXT DEFAULT '', city TEXT DEFAULT '', state TEXT DEFAULT '', zip TEXT DEFAULT '', phone TEXT NOT NULL, bank TEXT DEFAULT '', status TEXT DEFAULT 'Lead', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
+    init_session.execute(text("CREATE TABLE IF NOT EXISTS crm_files (id INTEGER PRIMARY KEY AUTOINCREMENT, file_name TEXT NOT NULL, file_extension TEXT NOT NULL, file_data BLOB NOT NULL, uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
     init_session.commit()
 
 # ----------------------------------------------------
@@ -96,12 +72,7 @@ if not st.session_state["is_admin"]:
     
     if search_input:
         try:
-            query_str = """
-                SELECT fname, lname, email, dob, address, city, state, zip, phone, bank, status 
-                FROM clients 
-                WHERE fname LIKE :param OR lname LIKE :param OR email LIKE :param OR phone LIKE :param 
-                ORDER BY id DESC;
-            """
+            query_str = "SELECT fname, lname, email, dob, address, city, state, zip, phone, bank, status FROM clients WHERE fname LIKE :param OR lname LIKE :param OR email LIKE :param OR phone LIKE :param ORDER BY id DESC;"
             data_ledger = conn.query(query_str, params={"param": f"%{search_input}%"}, ttl=0)
             
             if not data_ledger.empty:
@@ -141,12 +112,7 @@ else:
         
         try:
             if admin_search:
-                query_str = """
-                    SELECT id, fname, lname, email, dob, address, city, state, zip, phone, bank, status, created_at 
-                    FROM clients 
-                    WHERE fname LIKE :p OR lname LIKE :p OR email LIKE :p OR phone LIKE :p 
-                    ORDER BY id DESC;
-                """
+                query_str = "SELECT id, fname, lname, email, dob, address, city, state, zip, phone, bank, status, created_at FROM clients WHERE fname LIKE :p OR lname LIKE :p OR email LIKE :p OR phone LIKE :p ORDER BY id DESC;"
                 df_admin = conn.query(query_str, params={"p": f"%{admin_search}%"}, ttl=0)
             else:
                 df_admin = conn.query("SELECT id, fname, lname, email, dob, address, city, state, zip, phone, bank, status, created_at FROM clients ORDER BY id DESC;", ttl=0)
@@ -198,10 +164,11 @@ else:
                             
                             df_final = df_to_import[['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']]
                             
-                            # Clean out a temporary table and upload the new rows to it
+                            # Clean out a temporary table and upload the new rows to it safely without multi-line triple strings
                             raw_session.execute(text("DROP TABLE IF EXISTS temp_upload;"))
                             df_final.to_sql("temp_upload", con=raw_session.connection(), if_exists="replace", index=False)
                             
-                            # Use an atomic SQL command to move and update the contacts instantly
-                            raw_session.execute(text("""
-                                INSERT INTO clients (fname, lname, email, dob, address, city, state, zip, phone, bank, status)
+                            # Atomic conversion command executed securely in a single line string to satisfy Python bounds
+                            sql_upsert_raw = "INSERT INTO clients (fname, lname, email, dob, address, city, state, zip, phone, bank, status) SELECT fname, lname, email, dob, address, city, state, zip, phone, bank, status FROM temp_upload ON CONFLICT(email) DO UPDATE SET fname=excluded.fname, lname=excluded.lname, phone=excluded.phone, dob=excluded.dob, address=excluded.address, city=excluded.city, state=excluded.state, zip=excluded.zip, bank=excluded.bank, status=excluded.status;"
+                            
+                            raw_session.execute(text(sql_upsert_raw))

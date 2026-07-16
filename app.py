@@ -36,7 +36,7 @@ if "authenticated" not in st.session_state:
 if not st.session_state["authenticated"]:
     st.title("🔐 Secure CRM Terminal")
     entered_pass = st.text_input("Enter Corporate CRM Access Password", type="password")
-    
+
     if st.button("Unlock Dashboard"):
         if entered_pass == st.secrets["auth_keys"]["admin_password"]:
             st.session_state["authenticated"] = True
@@ -69,26 +69,26 @@ if st.sidebar.button("Logout of Terminal"):
 if not st.session_state["is_admin"]:
     st.subheader("📞 Customer Contact Pull-Up Terminal")
     search_input = st.text_input("Enter exact phone number, name, or email to extract a profile")
-    
+
     if search_input:
         try:
             query_str = "SELECT fname, lname, email, dob, address, city, state, zip, phone, bank, status FROM clients WHERE fname LIKE :param OR lname LIKE :param OR email LIKE :param OR phone LIKE :param ORDER BY id DESC;"
             data_ledger = conn.query(query_str, params={"param": f"%{search_input}%"}, ttl=0)
-            
+
             if not data_ledger.empty:
                 st.success(f"Record Found! Match total: {len(data_ledger)}")
-                
+
                 for index, row in data_ledger.iterrows():
                     with st.container(border=True):
                         st.markdown(f"### 👤 Profile: {row['fname']} {row['lname']}")
-                        
+
                         col_a, col_b, col_c = st.columns(3)
                         col_a.markdown(f"**📞 Phone Number:**  \n{row['phone']}")
                         col_b.markdown(f"**✉️ Email Address:**  \n{row['email']}")
                         col_c.markdown(f"**📅 Date of Birth:**  \n{row['dob']}")
-                        
+
                         st.markdown("---")
-                        
+
                         col_d, col_e, col_f = st.columns(3)
                         col_d.markdown(f"**🏠 Street Address:**  \n{row['address']}")
                         col_e.markdown(f"**🏙️ City/State/Zip:**  \n{row['city']}, {row['state']} {row['zip']}")
@@ -105,37 +105,37 @@ if not st.session_state["is_admin"]:
 # ----------------------------------------------------
 else:
     tab1, tab2 = st.tabs(["🔍 Global Master Directory", "📦 Cloud Database Storage Ledger"])
-    
+
     with tab1:
         st.subheader("📊 Master Customer Database View")
         admin_search = st.text_input("🔍 Filter Registry (Real-time tracking)")
-        
+
         try:
             if admin_search:
                 query_str = "SELECT id, fname, lname, email, dob, address, city, state, zip, phone, bank, status, created_at FROM clients WHERE fname LIKE :p OR lname LIKE :p OR email LIKE :p OR phone LIKE :p ORDER BY id DESC;"
                 df_admin = conn.query(query_str, params={"p": f"%{admin_search}%"}, ttl=0)
             else:
                 df_admin = conn.query("SELECT id, fname, lname, email, dob, address, city, state, zip, phone, bank, status, created_at FROM clients ORDER BY id DESC;", ttl=0)
-                
+
             st.dataframe(df_admin, use_container_width=True, hide_index=True)
         except Exception as ex:
             st.error(f"Admin Directory Error: {ex}")
-            
+
     with tab2:
         st.subheader("🗄️ Streamlit Cloud Permanent Vault")
         st.markdown("#### 🚀 Admin Universal File Uploader")
         uploaded_file = st.file_uploader("Upload spreadsheet registry or backup file (Supports CSV, XLSX, PDF, etc.)")
-        
+
         if uploaded_file is not None:
             file_name = uploaded_file.name
             file_extension = file_name.split(".")[-1].lower() if "." in file_name else "unknown"
             binary_payload = uploaded_file.read()
-            
+
             st.warning(f"File Target Locked: {file_name} ({len(binary_payload)} bytes staging buffer)")
-            
+
             is_spreadsheet = file_extension in ["csv", "xlsx"]
             df_to_import = None
-            
+
             if is_spreadsheet:
                 try:
                     uploaded_file.seek(0)
@@ -146,7 +146,7 @@ else:
                     st.info(f"📊 Spreadsheet parsed successfully! Detected {len(df_to_import)} rows.")
                 except Exception as parse_err:
                     st.error(f"Could not parse spreadsheet text: {parse_err}")
-            
+
             if st.button("Commit File & Process Registry Matrix"):
                 try:
                     # 1. Save raw file backup blob using a direct, flat execution stream
@@ -154,21 +154,40 @@ else:
                         session.execute(text("INSERT INTO crm_files (file_name, file_extension, file_data) VALUES (:name, :ext, :data);"), {
                             "name": file_name, "ext": file_extension, "data": binary_payload
                         })
-                        
+
+                        rows_imported = 0
+
                         # 2. Extract and import matrix using standard database tools
                         if df_to_import is not None:
                             df_to_import = df_to_import.fillna("")
                             for col in ['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']:
                                 if col not in df_to_import.columns:
                                     df_to_import[col] = "Lead" if col == "status" else ""
-                            
+
                             df_final = df_to_import[['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']]
-                            
+
                             # Re-map database table parameters natively
                             session.execute(text("DROP TABLE IF EXISTS temp_upload;"))
                             df_final.to_sql("temp_upload", con=session.connection(), if_exists="replace", index=False)
-                            
+
                             # Single-line flat string execution clears indentation conflicts entirely
                             sql_upsert_raw = "INSERT INTO clients (fname, lname, email, dob, address, city, state, zip, phone, bank, status) SELECT fname, lname, email, dob, address, city, state, zip, phone, bank, status FROM temp_upload ON CONFLICT(email) DO UPDATE SET fname=excluded.fname, lname=excluded.lname, phone=excluded.phone, dob=excluded.dob, address=excluded.address, city=excluded.city, state=excluded.state, zip=excluded.zip, bank=excluded.bank, status=excluded.status;"
                             session.execute(text(sql_upsert_raw))
                             session.execute(text("DROP TABLE IF EXISTS temp_upload;"))
+
+                            rows_imported = len(df_final)
+
+                        # 3. Commit everything in this session — the file blob insert AND
+                        #    (if applicable) the client upsert — as a single atomic unit.
+                        session.commit()
+
+                    # 4. Feedback to the user, and clear cached admin directory query so the
+                    #    new/updated rows show up immediately in tab1 without a manual refresh.
+                    st.cache_data.clear()
+                    if df_to_import is not None:
+                        st.success(f"✅ Commit complete: file archived and {rows_imported} client record(s) imported/updated.")
+                    else:
+                        st.success("✅ Commit complete: file archived to the vault (no spreadsheet rows to import).")
+
+                except Exception as commit_err:
+                    st.error(f"Commit Execution Fault: {commit_err}")

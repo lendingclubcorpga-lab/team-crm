@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from sqlalchemy import text
+from sqlalchemy import text, bindparam
 import io
 
 # Page Setup
@@ -104,7 +104,7 @@ if not st.session_state["is_admin"]:
 # BRANCH B: ADMIN WORKFLOW (Uses Stable Bulk-Import Native Tools)
 # ----------------------------------------------------
 else:
-    tab1, tab2 = st.tabs(["🔍 Global Master Directory", "📦 Cloud Database Storage Ledger"])
+    tab1, tab2, tab3 = st.tabs(["🔍 Global Master Directory", "📦 Cloud Database Storage Ledger", "🗑️ Manage / Delete Data"])
 
     with tab1:
         st.subheader("📊 Master Customer Database View")
@@ -231,3 +231,86 @@ else:
 
                 except Exception as commit_err:
                     st.error(f"Commit Execution Fault: {commit_err}")
+
+    with tab3:
+        st.subheader("🗑️ Manage / Delete Data")
+
+        st.markdown("#### Individual client records")
+        del_search = st.text_input("Find a client to delete (name, email, or phone)", key="del_search")
+        try:
+            if del_search:
+                q = "SELECT id, fname, lname, email, phone, status, created_at FROM clients WHERE fname LIKE :p OR lname LIKE :p OR email LIKE :p OR phone LIKE :p ORDER BY id DESC;"
+                df_del = conn.query(q, params={"p": f"%{del_search}%"}, ttl=0)
+            else:
+                df_del = conn.query("SELECT id, fname, lname, email, phone, status, created_at FROM clients ORDER BY id DESC LIMIT 200;", ttl=0)
+
+            if not df_del.empty:
+                df_del.insert(0, "Delete?", False)
+                edited = st.data_editor(
+                    df_del, hide_index=True, use_container_width=True,
+                    disabled=["id", "fname", "lname", "email", "phone", "status", "created_at"],
+                    key="client_delete_editor",
+                )
+                ids_to_delete = edited.loc[edited["Delete?"], "id"].tolist()
+                if ids_to_delete:
+                    st.warning(f"{len(ids_to_delete)} record(s) selected for deletion.")
+                    if st.button("⚠️ Permanently delete selected client(s)"):
+                        with conn.session as del_session:
+                            del_session.execute(
+                                text("DELETE FROM clients WHERE id IN :ids").bindparams(
+                                    bindparam("ids", expanding=True)
+                                ),
+                                {"ids": ids_to_delete},
+                            )
+                            del_session.commit()
+                        st.cache_data.clear()
+                        st.success(f"Deleted {len(ids_to_delete)} record(s).")
+                        st.rerun()
+            else:
+                st.info("No client records match.")
+        except Exception as ex:
+            st.error(f"Delete Lookup Error: {ex}")
+
+        st.markdown("---")
+        st.markdown("#### Uploaded file backups")
+        try:
+            df_files = conn.query("SELECT id, file_name, file_extension, uploaded_at FROM crm_files ORDER BY id DESC;", ttl=0)
+            if not df_files.empty:
+                df_files.insert(0, "Delete?", False)
+                edited_files = st.data_editor(
+                    df_files, hide_index=True, use_container_width=True,
+                    disabled=["id", "file_name", "file_extension", "uploaded_at"],
+                    key="file_delete_editor",
+                )
+                file_ids_to_delete = edited_files.loc[edited_files["Delete?"], "id"].tolist()
+                if file_ids_to_delete:
+                    st.warning(f"{len(file_ids_to_delete)} file backup(s) selected for deletion.")
+                    if st.button("⚠️ Permanently delete selected file(s)"):
+                        with conn.session as del_file_session:
+                            del_file_session.execute(
+                                text("DELETE FROM crm_files WHERE id IN :ids").bindparams(
+                                    bindparam("ids", expanding=True)
+                                ),
+                                {"ids": file_ids_to_delete},
+                            )
+                            del_file_session.commit()
+                        st.cache_data.clear()
+                        st.success(f"Deleted {len(file_ids_to_delete)} file backup(s).")
+                        st.rerun()
+            else:
+                st.info("No uploaded file backups stored yet.")
+        except Exception as ex:
+            st.error(f"File List Error: {ex}")
+
+        st.markdown("---")
+        with st.expander("☢️ Danger zone: wipe ALL client records"):
+            st.write("This permanently deletes every row in the `clients` table. File backups in the vault are not affected.")
+            confirm_text = st.text_input('Type DELETE ALL to confirm', key="confirm_wipe")
+            if confirm_text == "DELETE ALL":
+                if st.button("Wipe all client records now"):
+                    with conn.session as wipe_session:
+                        wipe_session.execute(text("DELETE FROM clients;"))
+                        wipe_session.commit()
+                    st.cache_data.clear()
+                    st.success("All client records wiped.")
+                    st.rerun()

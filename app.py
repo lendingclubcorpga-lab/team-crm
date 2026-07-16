@@ -183,12 +183,12 @@ else:
             
             if st.button("Commit File & Process Registry Matrix"):
                 try:
-                    # Part 1: Write raw file backup blob
-                    with conn.session as session:
-                        session.execute(text("INSERT INTO crm_files (file_name, file_extension, file_data) VALUES (:name, :ext, :data);"), {
+                    # Part 1: Write raw file backup blob inside an isolated, short-lived session
+                    with conn.session as s1:
+                        s1.execute(text("INSERT INTO crm_files (file_name, file_extension, file_data) VALUES (:name, :ext, :data);"), {
                             "name": file_name, "ext": file_extension, "data": binary_payload
                         })
-                        session.commit()
+                        s1.commit()
                     
                     # Part 2: Extract text data directly
                     if df_to_import is not None:
@@ -198,8 +198,11 @@ else:
                                 df_to_import[col] = "Lead" if col == "status" else ""
                         
                         df_final = df_to_import[['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']]
-                        sql_upsert_raw = "INSERT INTO clients (fname, lname, email, dob, address, city, state, zip, phone, bank, status) VALUES (:fname, :lname, :email, :dob, :address, :city, :state, :zip, :phone, :bank, :status) ON CONFLICT(email) DO UPDATE SET fname=excluded.fname, lname=excluded.lname, phone=excluded.phone, dob=excluded.dob, address=excluded.address, city=excluded.city, state=excluded.state, zip=excluded.zip, bank=excluded.bank, status=excluded.status;"
                         
-                        with conn.session as session:
+                        # Process upsert natively through a dedicated connection mapping loop
+                        with conn.session as s2:
                             for _, row in df_final.iterrows():
-                                session.execute(text(sql_upsert_raw), dict(row))
+                                s2.execute(text("""
+                                    INSERT INTO clients (fname, lname, email, dob, address, city, state, zip, phone, bank, status) 
+                                    VALUES (:fname, :lname, :email, :dob, :address, :city, :state, :zip, :phone, :bank, :status)
+                                    ON CONFLICT(email) DO UPDATE SET 

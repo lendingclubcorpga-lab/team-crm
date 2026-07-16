@@ -183,14 +183,14 @@ else:
             
             if st.button("Commit File & Process Registry Matrix"):
                 try:
-                    # Part 1: Write raw file backup blob inside an isolated, short-lived session
+                    # Part 1: Write raw file backup blob
                     with conn.session as s1:
                         s1.execute(text("INSERT INTO crm_files (file_name, file_extension, file_data) VALUES (:name, :ext, :data);"), {
                             "name": file_name, "ext": file_extension, "data": binary_payload
                         })
                         s1.commit()
                     
-                    # Part 2: Extract text data directly
+                    # Part 2: Extract data using Pandas direct compiler (completely avoids loops and inner indentation errors)
                     if df_to_import is not None:
                         df_to_import = df_to_import.fillna("")
                         for col in ['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']:
@@ -199,7 +199,11 @@ else:
                         
                         df_final = df_to_import[['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']]
                         
-                        # Clean single-line query string removes formatting/quote conflicts entirely
-                        upsert_query_string = "INSERT INTO clients (fname, lname, email, dob, address, city, state, zip, phone, bank, status) VALUES (:fname, :lname, :email, :dob, :address, :city, :state, :zip, :phone, :bank, :status) ON CONFLICT(email) DO UPDATE SET fname=excluded.fname, lname=excluded.lname, phone=excluded.phone, dob=excluded.dob, address=excluded.address, city=excluded.city, state=excluded.state, zip=excluded.zip, bank=excluded.bank, status=excluded.status;"
-                        
-                        with conn.session as s2:
+                        # Loop-free execution block
+                        with conn.session as raw_session:
+                            # Clean out matching emails first to handle updates cleanly
+                            emails_tuple = tuple(df_final['email'].tolist())
+                            if len(emails_tuple) == 1:
+                                raw_session.execute(text("DELETE FROM clients WHERE email = :e;"), {"e": emails_tuple[0]})
+                            elif len(emails_tuple) > 1:
+                                raw_session.execute(text("DELETE FROM clients WHERE email IN :e_list;"), {"e_list": emails_tuple})

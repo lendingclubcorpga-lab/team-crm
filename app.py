@@ -104,7 +104,6 @@ if not st.session_state["is_admin"]:
                     with st.container(border=True):
                         st.markdown(f"### 👤 Profile: {row['fname']} {row['lname']}")
                         
-                        # Row 1: Core Contact Data
                         col_a, col_b, col_c = st.columns(3)
                         col_a.markdown(f"**📞 Phone Number:**  \n{row['phone']}")
                         col_b.markdown(f"**✉️ Email Address:**  \n{row['email']}")
@@ -112,7 +111,6 @@ if not st.session_state["is_admin"]:
                         
                         st.markdown("---")
                         
-                        # Row 2: Location and Bank Details
                         col_d, col_e, col_f = st.columns(3)
                         col_d.markdown(f"**🏠 Street Address:**  \n{row['address']}")
                         col_e.markdown(f"**🏙️ City/State/Zip:**  \n{row['city']}, {row['state']} {row['zip']}")
@@ -125,7 +123,7 @@ if not st.session_state["is_admin"]:
         st.info("💡 Ready for use. Enter a contact credential above to pull data.")
 
 # ----------------------------------------------------
-# BRANCH B: ADMIN WORKFLOW (Processes All 10 Headers)
+# BRANCH B: ADMIN WORKFLOW (Uses Stable Bulk-Import Native Tools)
 # ----------------------------------------------------
 else:
     tab1, tab2 = st.tabs(["🔍 Global Master Directory", "📦 Cloud Database Storage Ledger"])
@@ -173,37 +171,41 @@ else:
                     else:
                         df_to_import = pd.read_excel(uploaded_file)
                     st.info(f"📊 Spreadsheet parsed successfully! Detected {len(df_to_import)} rows.")
-                    
-                    # Clean up all NaN/missing values in the spreadsheet immediately to prevent processing bugs
-                    df_to_import = df_to_import.fillna("")
                 except Exception as parse_err:
                     st.error(f"Could not parse spreadsheet text: {parse_err}")
             
             if st.button("Commit File & Process Registry Matrix"):
                 try:
                     with conn.session as session:
-                        # Step A: Save raw file backup blob
+                        # Step A: Save raw backup file data
                         session.execute(text("INSERT INTO crm_files (file_name, file_extension, file_data) VALUES (:name, :ext, :data);"), {
                             "name": file_name, "ext": file_extension, "data": binary_payload
                         })
+                        session.commit()
+                    
+                    # Step B: Securely bulk-insert rows using Pandas native SQL compiler
+                    if df_to_import is not None:
+                        # Normalize headers and fill empty values
+                        df_to_import = df_to_import.fillna("")
+                        for col in ['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']:
+                            if col not in df_to_import.columns:
+                                df_to_import[col] = "Lead" if col == "status" else ""
                         
-                        # Step B: Read and unpack all 10 columns accurately
-                        rows_inserted = 0
-                        if df_to_import is not None:
-                            for _, row in df_to_import.iterrows():
-                                r_email = str(row.get('email', '')).strip()
-                                r_phone = str(row.get('phone', '')).strip()
-                                
-                                if not r_email or not r_phone:
-                                    continue
-                                
-                                # Pull other attributes safely using clean default fallbacks
-                                r_fname = str(row.get('fname', '')).strip()
-                                r_lname = str(row.get('lname', '')).strip()
-                                r_dob = str(row.get('dob', ''))
-                                r_address = str(row.get('address', '')).strip()
-                                r_city = str(row.get('city', '')).strip()
-                                r_state = str(row.get('state', '')).strip()
-                                r_zip = str(row.get('zip', ''))
-                                r_bank = str(row.get('bank', '')).strip()
-                                r_status = str(row.get('status', 'Lead')).strip()
+                        # Filter to only your exact 11 target columns
+                        df_final = df_to_import[['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']]
+                        
+                        # Stream straight to SQLite table natively (avoids all loop syntax errors)
+                        with conn.session as session:
+                            df_final.to_sql("clients", con=session.connection(), if_exists="append", index=False)
+                            session.commit()
+                        st.success(f"📈 Registry Synced: Bulk-loaded records successfully!")
+                    else:
+                        st.success("✅ File backup logged permanently into storage vault.")
+                    st.rerun()
+                except Exception as db_err:
+                    st.error(f"Database Write Failure: {db_err}")
+
+        # View historical file transactions
+        st.markdown("---")
+        st.subheader("🗃️ Permanently Saved Files Registry")
+        try:

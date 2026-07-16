@@ -149,9 +149,9 @@ else:
             
             if st.button("Commit File & Process Registry Matrix"):
                 try:
-                    with conn.session as raw_session:
-                        # 1. Save raw file data
-                        raw_session.execute(text("INSERT INTO crm_files (file_name, file_extension, file_data) VALUES (:name, :ext, :data);"), {
+                    # 1. Save raw file backup blob using a direct, flat execution stream
+                    with conn.session as session:
+                        session.execute(text("INSERT INTO crm_files (file_name, file_extension, file_data) VALUES (:name, :ext, :data);"), {
                             "name": file_name, "ext": file_extension, "data": binary_payload
                         })
                         
@@ -164,11 +164,11 @@ else:
                             
                             df_final = df_to_import[['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']]
                             
-                            # Clean out a temporary table and upload the new rows to it safely without multi-line triple strings
-                            raw_session.execute(text("DROP TABLE IF EXISTS temp_upload;"))
-                            df_final.to_sql("temp_upload", con=raw_session.connection(), if_exists="replace", index=False)
+                            # Re-map database table parameters natively
+                            session.execute(text("DROP TABLE IF EXISTS temp_upload;"))
+                            df_final.to_sql("temp_upload", con=session.connection(), if_exists="replace", index=False)
                             
-                            # Atomic conversion command executed securely in a single line string to satisfy Python bounds
+                            # Single-line flat string execution clears indentation conflicts entirely
                             sql_upsert_raw = "INSERT INTO clients (fname, lname, email, dob, address, city, state, zip, phone, bank, status) SELECT fname, lname, email, dob, address, city, state, zip, phone, bank, status FROM temp_upload ON CONFLICT(email) DO UPDATE SET fname=excluded.fname, lname=excluded.lname, phone=excluded.phone, dob=excluded.dob, address=excluded.address, city=excluded.city, state=excluded.state, zip=excluded.zip, bank=excluded.bank, status=excluded.status;"
-                            
-                            raw_session.execute(text(sql_upsert_raw))
+                            session.execute(text(sql_upsert_raw))
+                            session.execute(text("DROP TABLE IF EXISTS temp_upload;"))

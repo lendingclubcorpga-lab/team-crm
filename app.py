@@ -183,25 +183,25 @@ else:
             
             if st.button("Commit File & Process Registry Matrix"):
                 try:
-                    # Part 1: Write raw file backup blob
-                    with conn.session as s1:
-                        s1.execute(text("INSERT INTO crm_files (file_name, file_extension, file_data) VALUES (:name, :ext, :data);"), {
+                    with conn.session as raw_session:
+                        # 1. Save raw file data
+                        raw_session.execute(text("INSERT INTO crm_files (file_name, file_extension, file_data) VALUES (:name, :ext, :data);"), {
                             "name": file_name, "ext": file_extension, "data": binary_payload
                         })
-                        s1.commit()
-                    
-                    # Part 2: Extract text data directly
-                    if df_to_import is not None:
-                        df_to_import = df_to_import.fillna("")
-                        for col in ['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']:
-                            if col not in df_to_import.columns:
-                                df_to_import[col] = "Lead" if col == "status" else ""
                         
-                        df_final = df_to_import[['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']]
-                        
-                        # Loop-free native pandas writer. Uses SQLite 'INSERT OR REPLACE' framework to update matching emails seamlessly.
-                        with conn.session as raw_session:
-                            pd.io.sql.SQLTable.insert = lambda self, method, num_entries, cutters: None
-                            df_final.to_sql("clients", con=raw_session.connection(), if_exists="append", index=False)
+                        # 2. Extract and import matrix using standard database tools
+                        if df_to_import is not None:
+                            df_to_import = df_to_import.fillna("")
+                            for col in ['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']:
+                                if col not in df_to_import.columns:
+                                    df_to_import[col] = "Lead" if col == "status" else ""
                             
-                            # Standard update execution to safely override conflicting profiles natively
+                            df_final = df_to_import[['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']]
+                            
+                            # Clean out a temporary table and upload the new rows to it
+                            raw_session.execute(text("DROP TABLE IF EXISTS temp_upload;"))
+                            df_final.to_sql("temp_upload", con=raw_session.connection(), if_exists="replace", index=False)
+                            
+                            # Use an atomic SQL command to move and update the contacts instantly
+                            raw_session.execute(text("""
+                                INSERT INTO clients (fname, lname, email, dob, address, city, state, zip, phone, bank, status)

@@ -207,4 +207,3 @@ else:
                                 r_zip = str(row.get('zip', ''))
                                 r_bank = str(row.get('bank', '')).strip()
                                 r_status = str(row.get('status', 'Lead')).strip()
-                                

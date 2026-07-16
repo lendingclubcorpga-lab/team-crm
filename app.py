@@ -157,7 +157,12 @@ else:
 
                         rows_imported = 0
 
-                        # 2. Extract and import matrix using standard database tools
+                        # 2. Extract and import matrix — done as a portable per-row
+                        #    "check then insert-or-update" loop rather than SQLite's
+                        #    ON CONFLICT...DO UPDATE upsert syntax, because Streamlit
+                        #    Cloud's bundled sqlite3 library predates SQLite 3.24 and
+                        #    doesn't understand that syntax at all (hence the earlier
+                        #    "near DO: syntax error"). This loop works on any version.
                         if df_to_import is not None:
                             df_to_import = df_to_import.fillna("")
                             for col in ['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']:
@@ -166,16 +171,30 @@ else:
 
                             df_final = df_to_import[['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']]
 
-                            # Re-map database table parameters natively
-                            session.execute(text("DROP TABLE IF EXISTS temp_upload;"))
-                            df_final.to_sql("temp_upload", con=session.connection(), if_exists="replace", index=False)
+                            update_sql = text(
+                                "UPDATE clients SET fname=:fname, lname=:lname, phone=:phone, dob=:dob, "
+                                "address=:address, city=:city, state=:state, zip=:zip, bank=:bank, status=:status "
+                                "WHERE email=:email;"
+                            )
+                            insert_sql = text(
+                                "INSERT INTO clients (fname, lname, email, dob, address, city, state, zip, phone, bank, status) "
+                                "VALUES (:fname, :lname, :email, :dob, :address, :city, :state, :zip, :phone, :bank, :status);"
+                            )
 
-                            # Single-line flat string execution clears indentation conflicts entirely
-                            sql_upsert_raw = "INSERT INTO clients (fname, lname, email, dob, address, city, state, zip, phone, bank, status) SELECT fname, lname, email, dob, address, city, state, zip, phone, bank, status FROM temp_upload ON CONFLICT(email) DO UPDATE SET fname=excluded.fname, lname=excluded.lname, phone=excluded.phone, dob=excluded.dob, address=excluded.address, city=excluded.city, state=excluded.state, zip=excluded.zip, bank=excluded.bank, status=excluded.status;"
-                            session.execute(text(sql_upsert_raw))
-                            session.execute(text("DROP TABLE IF EXISTS temp_upload;"))
-
-                            rows_imported = len(df_final)
+                            for _, row in df_final.iterrows():
+                                email = str(row["email"]).strip()
+                                if not email:
+                                    continue  # email is NOT NULL / UNIQUE — skip rows without one
+                                params = {
+                                    "fname": row["fname"], "lname": row["lname"], "email": email,
+                                    "dob": row["dob"], "address": row["address"], "city": row["city"],
+                                    "state": row["state"], "zip": row["zip"], "phone": row["phone"],
+                                    "bank": row["bank"], "status": row["status"],
+                                }
+                                result = session.execute(update_sql, params)
+                                if result.rowcount == 0:
+                                    session.execute(insert_sql, params)
+                                rows_imported += 1
 
                         # 3. Commit everything in this session — the file blob insert AND
                         #    (if applicable) the client upsert — as a single atomic unit.

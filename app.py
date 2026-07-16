@@ -15,16 +15,13 @@ except Exception as e:
 
 # 🔄 FORCE STRUCTURE SYNCHRONIZATION: Wipe old tables to support expanded 11-column fields
 with conn.session as init_session:
-    # Check if the old structure is active by attempting to read fname
     try:
         init_session.execute(text("SELECT fname FROM clients LIMIT 1;"))
     except Exception:
-        # If it fails, the database is outdated. Force drop and update structural schema.
         init_session.execute(text("DROP TABLE IF EXISTS clients;"))
         init_session.execute(text("DROP TABLE IF EXISTS crm_files;"))
         init_session.commit()
 
-    # Re-initialize with all custom client columns
     init_session.execute(text("""
         CREATE TABLE IF NOT EXISTS clients (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -186,25 +183,26 @@ else:
             
             if st.button("Commit File & Process Registry Matrix"):
                 try:
+                    # Part 1: Write raw file backup blob
                     with conn.session as session:
-                        # Step A: Save raw backup file data
                         session.execute(text("INSERT INTO crm_files (file_name, file_extension, file_data) VALUES (:name, :ext, :data);"), {
                             "name": file_name, "ext": file_extension, "data": binary_payload
                         })
                         session.commit()
                     
-                    # Step B: Securely bulk-insert rows using Pandas native SQL compiler
+                    # Part 2: Extract text data directly
                     if df_to_import is not None:
-                        # Normalize headers and fill empty values
                         df_to_import = df_to_import.fillna("")
                         for col in ['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']:
                             if col not in df_to_import.columns:
                                 df_to_import[col] = "Lead" if col == "status" else ""
                         
-                        # Filter to only your exact 11 target columns
                         df_final = df_to_import[['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']]
                         
+                        # Loop safely through cleaned rows without using complex conditional queries
                         with conn.session as session:
-                            df_final.to_sql("clients", con=session.connection(), if_exists="append", index=False)
-                            session.commit()
-                        st.success(f"📈 Registry Synced: Bulk-loaded records successfully!")
+                            for _, row in df_final.iterrows():
+                                session.execute(text("""
+                                    INSERT INTO clients (fname, lname, email, dob, address, city, state, zip, phone, bank, status) 
+                                    VALUES (:fname, :lname, :email, :dob, :address, :city, :state, :zip, :phone, :bank, :status)
+                                    ON CONFLICT(email) DO UPDATE SET 

@@ -93,7 +93,6 @@ if not st.session_state["is_admin"]:
             if not data_ledger.empty:
                 st.success(f"Record Found! Match total: {len(data_ledger)}")
                 
-                # Show matches cleanly as profile cards instead of a massive table spreadsheet
                 for index, row in data_ledger.iterrows():
                     with st.container(border=True):
                         c1, c2, c3 = st.columns(3)
@@ -202,3 +201,4 @@ else:
             else:
                 st.info("No raw external attachments are currently stored inside the database.")
         except Exception as read_err:
+            st.error(f"Could not load file transaction logs: {read_err}")

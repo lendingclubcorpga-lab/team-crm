@@ -164,10 +164,31 @@ else:
                         #    doesn't understand that syntax at all (hence the earlier
                         #    "near DO: syntax error"). This loop works on any version.
                         if df_to_import is not None:
-                            df_to_import = df_to_import.fillna("")
+                            # Ensure every expected column exists first.
                             for col in ['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']:
                                 if col not in df_to_import.columns:
                                     df_to_import[col] = "Lead" if col == "status" else ""
+
+                            # sqlite3 can only bind plain Python types (str/int/float/None) —
+                            # pandas gives us Timestamp objects for dates and numpy int64 for
+                            # numeric-looking columns like phone/zip, both of which raise
+                            # "Error binding parameter" if passed through as-is. Coerce every
+                            # cell to a plain string (dates -> YYYY-MM-DD) up front.
+                            def _clean_cell(v):
+                                if pd.isna(v):
+                                    return ""
+                                if isinstance(v, pd.Timestamp):
+                                    return v.strftime("%Y-%m-%d")
+                                return str(v).strip()
+
+                            for col in ['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']:
+                                df_to_import[col] = df_to_import[col].apply(_clean_cell)
+
+                            # Some source exports store email as a markdown link, e.g.
+                            # "[name@example.com](mailto:name@example.com)" — pull the plain
+                            # address back out wherever that pattern shows up.
+                            extracted = df_to_import['email'].str.extract(r'([\w\.\-\+]+@[\w\.\-]+\.\w+)', expand=False)
+                            df_to_import['email'] = extracted.fillna(df_to_import['email'])
 
                             df_final = df_to_import[['fname', 'lname', 'email', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'status']]
 

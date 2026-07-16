@@ -13,14 +13,21 @@ except Exception as e:
     st.error(f"Storage Error: Failed to safely initiate backend connection pool. Details: {e}")
     st.stop()
 
-# AUTOMATIC DATABASE INITIALIZATION (Runs once silently on startup)
+# AUTOMATIC DATABASE INITIALIZATION (Expanded to hold all 10 custom columns)
 with conn.session as init_session:
     init_session.execute(text("""
         CREATE TABLE IF NOT EXISTS clients (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
+            fname TEXT DEFAULT '',
+            lname TEXT DEFAULT '',
             email TEXT NOT NULL UNIQUE,
+            dob TEXT DEFAULT '',
+            address TEXT DEFAULT '',
+            city TEXT DEFAULT '',
+            state TEXT DEFAULT '',
+            zip TEXT DEFAULT '',
             phone TEXT NOT NULL,
+            bank TEXT DEFAULT '',
             status TEXT DEFAULT 'Lead',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -74,18 +81,18 @@ if st.sidebar.button("Logout of Terminal"):
     st.rerun()
 
 # ----------------------------------------------------
-# BRANCH A: STRICT TEAM WORKFLOW (Search Only, Files Hidden)
+# BRANCH A: STRICT TEAM WORKFLOW (Displays All 10 Fields On Match)
 # ----------------------------------------------------
 if not st.session_state["is_admin"]:
     st.subheader("📞 Customer Contact Pull-Up Terminal")
-    search_input = st.text_input("Enter exact phone number or name to extract a profile")
+    search_input = st.text_input("Enter exact phone number, name, or email to extract a profile")
     
     if search_input:
         try:
             query_str = """
-                SELECT id, name, email, phone, status 
+                SELECT fname, lname, email, dob, address, city, state, zip, phone, bank, status 
                 FROM clients 
-                WHERE name LIKE :param OR email LIKE :param OR phone LIKE :param 
+                WHERE fname LIKE :param OR lname LIKE :param OR email LIKE :param OR phone LIKE :param 
                 ORDER BY id DESC;
             """
             data_ledger = conn.query(query_str, params={"param": f"%{search_input}%"}, ttl=0)
@@ -95,19 +102,30 @@ if not st.session_state["is_admin"]:
                 
                 for index, row in data_ledger.iterrows():
                     with st.container(border=True):
-                        c1, c2, c3 = st.columns(3)
-                        c1.markdown(f"**👤 Customer Name:**  \n{row['name']}")
-                        c2.markdown(f"**📞 Phone Number:**  \n{row['phone']}")
-                        c3.markdown(f"**✉️ Email Address:**  \n{row['email']}")
+                        st.markdown(f"### 👤 Profile: {row['fname']} {row['lname']}")
+                        
+                        # Row 1: Core Contact Data
+                        col_a, col_b, col_c = st.columns(3)
+                        col_a.markdown(f"**📞 Phone Number:**  \n{row['phone']}")
+                        col_b.markdown(f"**✉️ Email Address:**  \n{row['email']}")
+                        col_c.markdown(f"**📅 Date of Birth:**  \n{row['dob']}")
+                        
+                        st.markdown("---")
+                        
+                        # Row 2: Location and Bank Details
+                        col_d, col_e, col_f = st.columns(3)
+                        col_d.markdown(f"**🏠 Street Address:**  \n{row['address']}")
+                        col_e.markdown(f"**🏙️ City/State/Zip:**  \n{row['city']}, {row['state']} {row['zip']}")
+                        col_f.markdown(f"**🏦 Bank Node:**  \n{row['bank']}")
             else:
                 st.warning("No matching profile exists inside the secure registry.")
         except Exception as ex:
             st.error(f"Search Execution Fault: {ex}")
     else:
-        st.info("💡 Ready for use. Enter a phone number above to pull data.")
+        st.info("💡 Ready for use. Enter a contact credential above to pull data.")
 
 # ----------------------------------------------------
-# BRANCH B: ADMIN WORKFLOW (Full Power Management Ledger)
+# BRANCH B: ADMIN WORKFLOW (Processes All 10 Headers)
 # ----------------------------------------------------
 else:
     tab1, tab2 = st.tabs(["🔍 Global Master Directory", "📦 Cloud Database Storage Ledger"])
@@ -118,10 +136,15 @@ else:
         
         try:
             if admin_search:
-                query_str = "SELECT id, name, email, phone, status, created_at FROM clients WHERE name LIKE :p OR email LIKE :p OR phone LIKE :p ORDER BY id DESC;"
+                query_str = """
+                    SELECT id, fname, lname, email, dob, address, city, state, zip, phone, bank, status, created_at 
+                    FROM clients 
+                    WHERE fname LIKE :p OR lname LIKE :p OR email LIKE :p OR phone LIKE :p 
+                    ORDER BY id DESC;
+                """
                 df_admin = conn.query(query_str, params={"p": f"%{admin_search}%"}, ttl=0)
             else:
-                df_admin = conn.query("SELECT id, name, email, phone, status, created_at FROM clients ORDER BY id DESC;", ttl=0)
+                df_admin = conn.query("SELECT id, fname, lname, email, dob, address, city, state, zip, phone, bank, status, created_at FROM clients ORDER BY id DESC;", ttl=0)
                 
             st.dataframe(df_admin, use_container_width=True, hide_index=True)
         except Exception as ex:
@@ -156,49 +179,27 @@ else:
             if st.button("Commit File & Process Registry Matrix"):
                 try:
                     with conn.session as session:
-                        # Step A: Save raw backup file data
+                        # Step A: Save raw file backup blob
                         session.execute(text("INSERT INTO crm_files (file_name, file_extension, file_data) VALUES (:name, :ext, :data);"), {
                             "name": file_name, "ext": file_extension, "data": binary_payload
                         })
                         
-                        # Step B: Merge columns and write to searchable client roster
+                        # Step B: Read and unpack all 10 columns accurately
                         rows_inserted = 0
                         if df_to_import is not None:
                             for _, row in df_to_import.iterrows():
-                                if 'fname' in df_to_import.columns or 'lname' in df_to_import.columns:
-                                    f_part = str(row.get('fname', '')).strip() if pd.notna(row.get('fname')) else ''
-                                    l_part = str(row.get('lname', '')).strip() if pd.notna(row.get('lname')) else ''
-                                    r_name = f"{f_part} {l_part}".strip()
-                                else:
-                                    r_name = str(row.get('name', '')).strip()
-                                
                                 r_email = str(row.get('email', '')).strip()
                                 r_phone = str(row.get('phone', '')).strip() if pd.notna(row.get('phone')) else ''
-                                r_status = str(row.get('status', 'Lead')).strip()
                                 
-                                if not r_name or not r_email:
+                                # Skip row if it doesn't have vital credentials
+                                if not r_email or not r_phone:
                                     continue
-                                    
-                                session.execute(text("""
-                                    INSERT INTO clients (name, email, phone, status) VALUES (:name, :email, :phone, :status)
-                                    ON CONFLICT(email) DO UPDATE SET name=excluded.name, phone=excluded.phone, status=excluded.status;
-                                """), {"name": r_name, "email": r_email, "phone": r_phone, "status": r_status})
-                                rows_inserted += 1
-                        session.commit()
-                        
-                    st.success("✅ File logged permanently and metrics unpacked successfully!")
-                    st.rerun()
-                except Exception as db_err:
-                    st.error(f"Write Failure: {db_err}")
-
-        # View uploaded file table records (Only accessible inside admin dashboard)
-        st.markdown("---")
-        st.subheader("🗃️ Permanently Saved Files Registry")
-        try:
-            saved_files_df = conn.query("SELECT id, file_name, file_extension, uploaded_at FROM crm_files ORDER BY id DESC;", ttl=0)
-            if not saved_files_df.empty:
-                st.dataframe(saved_files_df, use_container_width=True, hide_index=True)
-            else:
-                st.info("No raw external attachments are currently stored inside the database.")
-        except Exception as read_err:
-            st.error(f"Could not load file transaction logs: {read_err}")
+                                
+                                # Pull other attributes safely mapping defaults if missing
+                                r_fname = str(row.get('fname', '')).strip() if pd.notna(row.get('fname')) else ''
+                                r_lname = str(row.get('lname', '')).strip() if pd.notna(row.get('lname')) else ''
+                                r_dob = str(row.get('dob', '')).strip() if pd.notna(row.get('dob')) else ''
+                                r_address = str(row.get('address', '')).strip() if pd.notna(row.get('address')) else ''
+                                r_city = str(row.get('city', '')).strip() if pd.notna(row.get('city')) else ''
+                                r_state = str(row.get('state', '')).strip() if pd.notna(row.get('state')) else ''
+                                r_zip = str(row.get('zip', '')).strip() if pd.notna(row.get('zip')) else ''

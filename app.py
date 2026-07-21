@@ -28,12 +28,12 @@ st.sidebar.success(f"Access Granted: **{current_role} Mode**")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 try:
-    # Adding ttl=0 tells the app to completely skip memory cache on every run
+    # Read the dataset fresh from your MASTER FILE ID tab
     existing_data = conn.read(worksheet="MASTER FILE ID", ttl=0)
     existing_data = existing_data.dropna(how="all")
 except Exception as e:
-    # Displays the exact hidden error to you if the connection fails
-    st.error(f"Google Sheet Connection Error: {e}")
+    # This will print the exact deep text reason from the Google API
+    st.error(f"Google Sheet Connection Error: {str(e)}")
     existing_data = pd.DataFrame(columns=[
         "email", "fname", "lname", "dob", "address", 
         "city", "state", "zip", "phone", "bank"

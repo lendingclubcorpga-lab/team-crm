@@ -3,10 +3,10 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import re
 
-st.set_page_config(page_title="Phone Lookup CRM", page_icon="📞", layout="wide")
+st.set_page_config(page_title="Avant Lookup CRM", page_icon="📞", layout="wide")
 
-st.title("Secure Google Sheets CRM")
-st.subheader("Zero Local Data Storage • Custom Column Lookup")
+st.title("Secure AVANT CRM")
+st.subheader("Phone • Custom Column Lookup")
 
 EXPECTED_COLUMNS = ["email", "fname", "lname", "dob", "address", "city", "state", "zip", "phone", "bank"]
 

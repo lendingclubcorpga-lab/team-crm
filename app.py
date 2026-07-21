@@ -28,16 +28,16 @@ st.sidebar.success(f"Access Granted: **{current_role} Mode**")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 try:
-    # Read the dataset fresh from your MASTER FILE ID tab
+    # Adding ttl=0 tells the app to completely skip memory cache on every run
     existing_data = conn.read(worksheet="MASTER FILE ID", ttl=0)
     existing_data = existing_data.dropna(how="all")
-except Exception:
-    # Safe structure fallback using your exact column schema
+except Exception as e:
+    # Displays the exact hidden error to you if the connection fails
+    st.error(f"Google Sheet Connection Error: {e}")
     existing_data = pd.DataFrame(columns=[
         "email", "fname", "lname", "dob", "address", 
         "city", "state", "zip", "phone", "bank"
     ])
-
 # Standardize Phone column format (remove spaces/dashes) for strict matching
 existing_data["phone"] = existing_data["phone"].astype(str).str.replace(r"[\s\-\(\)]+", "", regex=True)
 

@@ -28,8 +28,8 @@ st.sidebar.success(f"Access Granted: **{current_role} Mode**")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 try:
-    # Read the dataset fresh on every interaction without memory caching
-    existing_data = conn.read(worksheet="Sheet1", ttl=0)
+    # Read the dataset fresh from your MASTER FILE ID tab
+    existing_data = conn.read(worksheet="MASTER FILE ID", ttl=0)
     existing_data = existing_data.dropna(how="all")
 except Exception:
     # Safe structure fallback using your exact column schema
@@ -142,9 +142,9 @@ elif current_role == "Admin":
                 "bank": bank.strip()
             }])
             
-            # Merge and upload data using backend Service Account
+            # Merge and upload data back to the MASTER FILE ID tab
             updated_df = pd.concat([existing_data, new_lead], ignore_index=True)
-            conn.update(worksheet="Sheet1", data=updated_df)
+            conn.update(worksheet="MASTER FILE ID", data=updated_df)
             
             st.success(f"Entry for {fname} successfully added to Google Sheets!")
             st.rerun()

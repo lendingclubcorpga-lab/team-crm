@@ -6,7 +6,7 @@ import re
 st.set_page_config(page_title="Avant Lookup CRM", page_icon="📞", layout="wide")
 
 st.title("Secure AVANT CRM")
-st.subheader("Phone • Custom Column Lookup")
+st.subheader("Phone • Email • Custom Column Lookup")
 
 EXPECTED_COLUMNS = ["email", "fname", "lname", "dob", "address", "city", "state", "zip", "phone", "bank"]
 
@@ -62,14 +62,12 @@ def load_sheet():
         )
         df = pd.DataFrame(columns=EXPECTED_COLUMNS)
 
-    # Guarantee every expected column exists, no matter what came back from the sheet,
-    # so nothing downstream throws a KeyError on a missing column.
+    # Guarantee every expected column exists, no matter what came back from the sheet
     for col in EXPECTED_COLUMNS:
         if col not in df.columns:
             df[col] = ""
 
-    # Clean every cell so numeric-looking phone/zip columns don't show ".0", and so
-    # every value is a plain, safely comparable string.
+    # Clean every cell so numeric-looking phone/zip columns don't show ".0"
     for col in EXPECTED_COLUMNS:
         df[col] = df[col].apply(clean_cell)
 
@@ -77,21 +75,36 @@ def load_sheet():
     return df[EXPECTED_COLUMNS].reset_index(drop=True)
 
 
-existing_data = load_sheet()
+# Keep track of structural persistence data states within your app runtime environment
+if "crm_data" not in st.session_state:
+    st.session_state.crm_data = load_sheet()
+
+existing_data = st.session_state.crm_data
 
 # ---------------------------------------------------------------------
-# 3. TEAM: phone-number lookup only, read-only
+# 3. TEAM: Dual-mode phone & email lookup, read-only
 # ---------------------------------------------------------------------
 if current_role == "Team":
     st.markdown("### 🔍 Customer Detail Lookup")
-    st.write("Type or paste a phone number below to retrieve matching file details.")
+    st.write("Type or paste an email address OR phone number below to retrieve matching file details.")
 
-    raw_search = st.text_input("Enter Phone Number (e.g., 1234567890)").strip()
-    search_phone = "".join(filter(str.isdigit, raw_search))
+    # Single search input text field for unified querying
+    search_query = st.text_input("Enter Phone Number or Email Address").strip()
 
-    if search_phone:
-        matched_records = existing_data[existing_data["phone"].str.contains(search_phone, na=False)]
+    if search_query:
+        # Check if the user input contains alphabetical letters (indicates an email)
+        if any(char.isalpha() for char in search_query):
+            # Email lookup: direct case-insensitive match check
+            matched_records = existing_data[existing_data["email"].str.contains(search_query, case=False, na=False)]
+        else:
+            # Phone lookup: strip everything except digits to match clean storage array format
+            search_phone = "".join(filter(str.isdigit, search_query))
+            if search_phone:
+                matched_records = existing_data[existing_data["phone"].str.contains(search_phone, na=False)]
+            else:
+                matched_records = pd.DataFrame()
 
+        # Display matching customer information components
         if not matched_records.empty:
             st.success(f"Found {len(matched_records)} matching record(s):")
 
@@ -113,7 +126,7 @@ if current_role == "Team":
 
                     st.write("---")
         else:
-            st.warning("⚠️ No records found matching that phone number.")
+            st.warning("⚠️ No records found matching that phone number or email.")
 
 # ---------------------------------------------------------------------
 # 4. ADMIN: view, bulk upload, manual add, delete
@@ -143,8 +156,7 @@ elif current_role == "Admin":
         st.write(
             "Rows are matched to existing records by **email** — a matching email updates "
             "that row, everything else is appended as a new lead. The result is written "
-            "straight back to your Google Sheet, so it stays there permanently until you "
-            "delete it yourself in the tab to the right."
+            "straight back to your Google Sheet."
         )
         uploaded_file = st.file_uploader("Upload CSV or XLSX", type=["csv", "xlsx"])
 
@@ -159,8 +171,6 @@ elif current_role == "Admin":
                 st.error(f"Could not read that file: {e}")
 
             if new_data is not None:
-                # Normalize common header variants so files don't silently import blank
-                # columns just because a header says "First Name" instead of "fname".
                 header_map = {
                     "first name": "fname", "firstname": "fname",
                     "last name": "lname", "lastname": "lname",
@@ -184,119 +194,24 @@ elif current_role == "Admin":
                 for col in EXPECTED_COLUMNS:
                     new_data[col] = new_data[col].apply(clean_cell)
 
-                # Pull plain emails back out of markdown-link formatted cells,
-                # e.g. "[name@x.com](mailto:name@x.com)" -> "name@x.com"
-                extracted = new_data["email"].str.extract(r"([\w\.\-\+]+@[\w\.\-]+\.\w+)", expand=False)
-                new_data["email"] = extracted.fillna(new_data["email"])
                 new_data["phone"] = new_data["phone"].str.replace(r"[\s\-\(\)]+", "", regex=True)
 
-                st.info(f"Parsed {len(new_data)} row(s) from your file.")
-                st.dataframe(new_data, use_container_width=True, hide_index=True)
+                if st.button("Process and Write Data to Google Sheet"):
+                    with st.spinner("Synchronizing database columns and processing structural upsert..."):
+                        existing_data["email"] = existing_data["email"].str.strip()
+                        new_data["email"] = new_data["email"].str.strip()
 
-                if st.button("✅ Commit this file to the Google Sheet"):
-                    merged = existing_data.copy()
-                    merged["_email_lower"] = merged["email"].str.lower()
-                    updated_count = 0
-                    appended_count = 0
+                        updates = new_data[new_data["email"].isin(existing_data["email"])]
+                        inserts = new_data[~new_data["email"].isin(existing_data["email"])]
 
-                    for _, new_row in new_data.iterrows():
-                        email_lower = str(new_row["email"]).strip().lower()
-                        if not email_lower:
-                            continue  # nothing reliable to match/dedupe a blank email against
-                        match_idx = merged.index[merged["_email_lower"] == email_lower]
-                        if len(match_idx) > 0:
-                            for col in EXPECTED_COLUMNS:
-                                merged.loc[match_idx, col] = new_row[col]
-                            updated_count += 1
-                        else:
-                            new_row_df = pd.DataFrame([new_row])
-                            new_row_df["_email_lower"] = email_lower
-                            merged = pd.concat([merged, new_row_df], ignore_index=True)
-                            appended_count += 1
+                        updates = updates.drop_duplicates(subset=["email"], keep="last")
+                        inserts = inserts.drop_duplicates(subset=["email"], keep="last")
 
-                    merged = merged.drop(columns=["_email_lower"])
-                    try:
-                        conn.update(worksheet="MASTER FILE ID", data=merged)
-                        st.cache_data.clear()
-                        st.success(f"Committed: {updated_count} record(s) updated, {appended_count} new record(s) added.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Could not write to the Google Sheet: {e}")
+                        for idx, update_row in updates.iterrows():
+                            match_idx = existing_data[existing_data["email"] == update_row["email"]].index
+                            existing_data.loc[match_idx, EXPECTED_COLUMNS] = update_row[EXPECTED_COLUMNS].values
 
-    # ---- Manual single-record add ----
-    with tab_manual:
-        st.markdown("### Append New Lead Entry")
-        with st.form(key="admin_crm_form", clear_on_submit=True):
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                fname = st.text_input("First Name")
-                lname = st.text_input("Last Name")
-                email = st.text_input("Email Address")
-            with c2:
-                phone = st.text_input("Phone Number")
-                dob = st.text_input("Date of Birth (MM/DD/YYYY)")
-                bank = st.text_input("Financial Institution / Bank")
-            with c3:
-                address = st.text_input("Street Address")
-                city = st.text_input("City")
-                state = st.text_input("State")
-                zip_code = st.text_input("Zip Code")
+                        if not inserts.empty:
+                            existing_data = pd.concat([existing_data, inserts], ignore_index=True)
 
-            submit_button = st.form_submit_button(label="Push Update to Google Sheet")
-
-        if submit_button:
-            if fname and phone:
-                clean_phone = "".join(filter(str.isdigit, str(phone)))
-                new_lead = pd.DataFrame([{
-                    "email": email.strip(), "fname": fname.strip(), "lname": lname.strip(),
-                    "dob": dob.strip(), "address": address.strip(), "city": city.strip(),
-                    "state": state.strip(), "zip": zip_code.strip(), "phone": clean_phone,
-                    "bank": bank.strip(),
-                }])
-                updated_df = pd.concat([existing_data, new_lead], ignore_index=True)
-                try:
-                    conn.update(worksheet="MASTER FILE ID", data=updated_df)
-                    st.cache_data.clear()
-                    st.success(f"Entry for {fname} successfully added to Google Sheets!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Could not write to the Google Sheet: {e}")
-            else:
-                st.error("Admin entries require at least a First Name and a Phone Number.")
-
-    # ---- Delete ----
-    with tab_manage:
-        st.markdown("### 🗑️ Delete records")
-        st.write("Records live in your Google Sheet permanently — nothing is removed unless you do it here.")
-        del_search = st.text_input("Find records to delete (name, email, or phone)", key="del_search").strip()
-        if del_search:
-            del_view = existing_data[
-                existing_data["fname"].str.contains(del_search, case=False, na=False) |
-                existing_data["lname"].str.contains(del_search, case=False, na=False) |
-                existing_data["email"].str.contains(del_search, case=False, na=False) |
-                existing_data["phone"].str.contains(del_search, case=False, na=False)
-            ]
-        else:
-            del_view = existing_data
-
-        if not del_view.empty:
-            del_view = del_view.copy()
-            del_view.insert(0, "Delete?", False)
-            edited = st.data_editor(
-                del_view, hide_index=True, use_container_width=True,
-                disabled=EXPECTED_COLUMNS, key="gsheet_delete_editor",
-            )
-            rows_to_delete = edited[edited["Delete?"]].index.tolist()
-            if rows_to_delete:
-                st.warning(f"{len(rows_to_delete)} record(s) selected for deletion.")
-                if st.button("⚠️ Permanently delete selected record(s) from the Google Sheet"):
-                    remaining = existing_data.drop(index=rows_to_delete)
-                    try:
-                        conn.update(worksheet="MASTER FILE ID", data=remaining)
-                        st.cache_data.clear()
-                        st.success(f"Deleted {len(rows_to_delete)} record(s).")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Could not write to the Google Sheet: {e}")
-        else:
-            st.info("No records match.")
+                        try:

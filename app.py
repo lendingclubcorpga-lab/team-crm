@@ -153,8 +153,7 @@ elif current_role == "Admin":
         st.markdown("### 📤 Bulk import a CSV or Excel file")
         st.write(
             "Rows are matched to existing records by **email** — a matching email updates "
-            "that row, everything else is appended as a new lead. The result is written "
-            "straight back to your Google Sheet."
+            "that row, everything else is appended as a new lead."
         )
         uploaded_file = st.file_uploader("Upload CSV or XLSX", type=["csv", "xlsx"])
 
@@ -184,7 +183,6 @@ elif current_role == "Admin":
                     for c in new_data.columns
                 ]
 
-                # Drop unneeded columns and normalize structure
                 valid_cols = [c for c in new_data.columns if c in EXPECTED_COLUMNS]
                 new_data = new_data[valid_cols]
 
@@ -192,7 +190,6 @@ elif current_role == "Admin":
                     if col not in new_data.columns:
                         new_data[col] = ""
 
-                # Format rows before database upsert processing
                 for col in EXPECTED_COLUMNS:
                     new_data[col] = new_data[col].apply(clean_cell)
                 new_data["phone"] = new_data["phone"].str.replace(r"[\s\-\(\)]+", "", regex=True)
@@ -200,22 +197,28 @@ elif current_role == "Admin":
                 new_data = new_data[new_data["email"] != ""]
 
                 if st.button("Process & Save Bulk Upload", type="primary"):
+                    master_dict = existing_data.set_index("email").to_dict(orient="index")
+                    updated_count = 0
+                    added_count = 0
+
+                    for _, row in new_data.iterrows():
+                        email_key = str(row["email"]).strip()
+                        row_dict = row.to_dict()
+                        if "email" in row_dict:
+                            del row_dict["email"]
+
+                        if email_key in master_dict:
+                            for col in row_dict:
+                                if row_dict[col]:
+                                    master_dict[email_key][col] = row_dict[col]
+                            updated_count += 1
+                        else:
+                            master_dict[email_key] = row_dict
+                            added_count += 1
+
+                    updated_df = pd.DataFrame.from_dict(master_dict, orient="index").reset_index()
+                    updated_df = updated_df.rename(columns={"index": "email"})
+                    updated_df = updated_df[EXPECTED_COLUMNS]
+
                     try:
-                        # Convert to dict tracking to prevent pandas mutation errors
-                        master_dict = existing_data.set_index("email").to_dict(orient="index")
-                        
-                        updated_count = 0
-                        added_count = 0
-
-                        for _, row in new_data.iterrows():
-                            email_key = str(row["email"]).strip()
-                            row_dict = row.to_dict()
-                            if "email" in row_dict:
-                                del row_dict["email"]
-
-                            if email_key in master_dict:
-                                # Overwrite if new data contains content
-                                for col in row_dict:
-                                    if row_dict[col]:
-                                        master_dict[email_key][col] = row_dict[col]
-                                updated_count += 1
+                        conn.update(worksheet="MASTER FILE ID", data=updated_df)

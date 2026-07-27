@@ -201,19 +201,21 @@ elif current_role == "Admin":
 
                 if st.button("Process & Save Bulk Upload", type="primary"):
                     try:
-                        # 💡 FIXED: Process rows as dictionary tracking to prevent frame manipulation runtime errors
+                        # Convert to dict tracking to prevent pandas mutation errors
                         master_dict = existing_data.set_index("email").to_dict(orient="index")
                         
                         updated_count = 0
                         added_count = 0
 
                         for _, row in new_data.iterrows():
-                            email_key = row["email"].strip()
+                            email_key = str(row["email"]).strip()
                             row_dict = row.to_dict()
-                            del row_dict["email"] # Retain clean metadata parameters
+                            if "email" in row_dict:
+                                del row_dict["email"]
 
                             if email_key in master_dict:
-                                # Overwrite only if new data contains content
+                                # Overwrite if new data contains content
                                 for col in row_dict:
                                     if row_dict[col]:
                                         master_dict[email_key][col] = row_dict[col]
+                                updated_count += 1

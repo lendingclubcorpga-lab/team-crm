@@ -220,5 +220,4 @@ elif current_role == "Admin":
                     updated_df = updated_df.rename(columns={"index": "email"})
                     updated_df = updated_df[EXPECTED_COLUMNS]
 
-                    try:
-                        conn.update(worksheet="MASTER FILE ID", data=updated_df)
+                    # Synchronize directly back to the cloud document table

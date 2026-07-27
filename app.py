@@ -184,34 +184,36 @@ elif current_role == "Admin":
                     for c in new_data.columns
                 ]
 
+                # Drop unneeded columns and normalize structure
+                valid_cols = [c for c in new_data.columns if c in EXPECTED_COLUMNS]
+                new_data = new_data[valid_cols]
+
                 for col in EXPECTED_COLUMNS:
                     if col not in new_data.columns:
                         new_data[col] = ""
-                new_data = new_data[EXPECTED_COLUMNS]
 
+                # Format rows before database upsert processing
                 for col in EXPECTED_COLUMNS:
                     new_data[col] = new_data[col].apply(clean_cell)
-
                 new_data["phone"] = new_data["phone"].str.replace(r"[\s\-\(\)]+", "", regex=True)
+                new_data = new_data.dropna(subset=["email"])
+                new_data = new_data[new_data["email"] != ""]
 
-                if st.button("Process and Write Data to Google Sheet"):
-                    with st.spinner("Synchronizing database columns and processing structural upsert..."):
-                        existing_data["email"] = existing_data["email"].str.strip()
-                        new_data["email"] = new_data["email"].str.strip()
+                if st.button("Process & Save Bulk Upload", type="primary"):
+                    try:
+                        # 💡 FIXED: Process rows as dictionary tracking to prevent frame manipulation runtime errors
+                        master_dict = existing_data.set_index("email").to_dict(orient="index")
+                        
+                        updated_count = 0
+                        added_count = 0
 
-                        updates = new_data[new_data["email"].isin(existing_data["email"])]
-                        inserts = new_data[~new_data["email"].isin(existing_data["email"])]
+                        for _, row in new_data.iterrows():
+                            email_key = row["email"].strip()
+                            row_dict = row.to_dict()
+                            del row_dict["email"] # Retain clean metadata parameters
 
-                        updates = updates.drop_duplicates(subset=["email"], keep="last")
-                        inserts = inserts.drop_duplicates(subset=["email"], keep="last")
-
-                        for idx, update_row in updates.iterrows():
-                            match_idx = existing_data[existing_data["email"] == update_row["email"]].index
-                            existing_data.loc[match_idx, EXPECTED_COLUMNS] = update_row[EXPECTED_COLUMNS].values
-
-                        if not inserts.empty:
-                            existing_data = pd.concat([existing_data, inserts], ignore_index=True)
-
-                        try:
-                            conn.update(worksheet="MASTER FILE ID", data=existing_data)
-                            st.session_state.crm_data = existing_data
+                            if email_key in master_dict:
+                                # Overwrite only if new data contains content
+                                for col in row_dict:
+                                    if row_dict[col]:
+                                        master_dict[email_key][col] = row_dict[col]

@@ -75,7 +75,7 @@ def load_sheet():
     return df[EXPECTED_COLUMNS].reset_index(drop=True)
 
 
-# Keep track of structural persistence data states within your app runtime environment
+# Keep track of data state in memory so user actions refresh instantly
 if "crm_data" not in st.session_state:
     st.session_state.crm_data = load_sheet()
 
@@ -88,23 +88,21 @@ if current_role == "Team":
     st.markdown("### 🔍 Customer Detail Lookup")
     st.write("Type or paste an email address OR phone number below to retrieve matching file details.")
 
-    # Single search input text field for unified querying
     search_query = st.text_input("Enter Phone Number or Email Address").strip()
 
     if search_query:
-        # Check if the user input contains alphabetical letters (indicates an email)
+        # Check if the user input contains alphabetical letters (indicates an email lookup)
         if any(char.isalpha() for char in search_query):
-            # Email lookup: direct case-insensitive match check
             matched_records = existing_data[existing_data["email"].str.contains(search_query, case=False, na=False)]
         else:
-            # Phone lookup: strip everything except digits to match clean storage array format
+            # Phone lookup: strip formatting rules to query bare numbers
             search_phone = "".join(filter(str.isdigit, search_query))
             if search_phone:
                 matched_records = existing_data[existing_data["phone"].str.contains(search_phone, na=False)]
             else:
                 matched_records = pd.DataFrame()
 
-        # Display matching customer information components
+        # Display match cards
         if not matched_records.empty:
             st.success(f"Found {len(matched_records)} matching record(s):")
 
@@ -215,3 +213,5 @@ elif current_role == "Admin":
                             existing_data = pd.concat([existing_data, inserts], ignore_index=True)
 
                         try:
+                            conn.update(worksheet="MASTER FILE ID", data=existing_data)
+                            st.session_state.crm_data = existing_data

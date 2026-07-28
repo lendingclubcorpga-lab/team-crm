@@ -197,7 +197,7 @@ elif current_role == "Admin":
                 new_data = new_data[new_data["email"] != ""]
 
                 if st.button("Process & Save Bulk Upload", type="primary"):
-                    master_dict = existing_data.set_index("email").to_dict(orient="index")
+                   master_dict = existing_data.set_index("email").to_dict(orient="index")
                     updated_count = 0
                     added_count = 0
 

@@ -170,7 +170,7 @@ if current_role in ["Team", "Admin"]:
                         valid_cols = [c for c in new_data.columns if c in EXPECTED_COLUMNS]
                         
                         if "email" not in valid_cols:
-                            st.error("❌ Upload aborted: The file must contain an 'email' or 'email address' column header.")
+                            st.error("❌ Upload aborted: The file must contain an 'email' or 'email address' column header to map records properly.")
                         else:
                             new_filtered = new_data[valid_cols].copy()
                             for col in EXPECTED_COLUMNS:
@@ -180,11 +180,12 @@ if current_role in ["Team", "Admin"]:
                                 new_filtered[col] = new_filtered[col].apply(clean_cell)
                             new_filtered["phone"] = new_filtered["phone"].str.replace(r"[\s\-\(\)]+", "", regex=True)
                             
-                            # Fresh load from cloud
                             updated_df = load_sheet()
                             new_count = 0
                             update_count = 0
                             
-                            # FIXED: Strict lowercase and trailing whitespace cleaning to prevent email mismatches
                             for _, row in new_filtered.iterrows():
                                 email_key = str(row["email"]).strip().lower()
+                                if not email_key:
+                                    continue
+                                

@@ -77,8 +77,6 @@ def load_sheet():
 # Keep track of data states securely across session lifecycles
 if "crm_data" not in st.session_state:
     st.session_state.crm_data = load_sheet()
-if "bulk_staged_df" not in st.session_state:
-    st.session_state.bulk_staged_df = None
 
 # ---------------------------------------------------------------------
 # 4. IMPLEMENT OPERATIONAL INTERFACES
@@ -147,49 +145,45 @@ if current_role in ["Team", "Admin"]:
             st.markdown("### 📤 Bulk Import CSV or Excel Dataset")
             st.write("Rows are matched to existing records by **email** — a matching email updates that row, everything else is appended as a new lead.")
             
-            uploaded_file = st.file_uploader("Upload CSV or XLSX", type=["csv", "xlsx"], key="crm_bulk_file_uploader")
+            # FIXED: Entire batch synchronization interface is wrapped inside an isolation form block
+            with st.form("bulk_upload_sync_form", clear_on_submit=True):
+                uploaded_file = st.file_uploader("Upload CSV or XLSX", type=["csv", "xlsx"], key="crm_bulk_file_uploader")
+                submit_sync = st.form_submit_button("💾 Save and Sync Uploaded File to Google Sheets Database", type="primary")
 
-            if uploaded_file is not None:
-                new_data = None
-                try:
-                    if uploaded_file.name.lower().endswith(".csv"):
-                        new_data = pd.read_csv(uploaded_file)
-                    else:
-                        new_data = pd.read_excel(uploaded_file)
-                except Exception as e:
-                    st.error(f"Could not read that file: {e}")
+                if submit_sync and uploaded_file is not None:
+                    new_data = None
+                    try:
+                        if uploaded_file.name.lower().endswith(".csv"):
+                            new_data = pd.read_csv(uploaded_file)
+                        else:
+                            new_data = pd.read_excel(uploaded_file)
+                    except Exception as e:
+                        st.error(f"Could not read that file: {e}")
 
-                if new_data is not None:
-                    header_map = {
-                        "first name": "fname", "firstname": "fname", "last name": "lname", "lastname": "lname",
-                        "email address": "email", "e-mail": "email", "phone number": "phone", "mobile": "phone",
-                        "cell": "phone", "date of birth": "dob", "birthdate": "dob", "street address": "address",
-                        "street": "address", "zip code": "zip", "postal code": "zip", "zipcode": "zip", "bank name": "bank"
-                    }
-                    new_data.columns = [header_map.get(str(c).strip().lower(), str(c).strip().lower()) for c in new_data.columns]
-                    valid_cols = [c for c in new_data.columns if c in EXPECTED_COLUMNS]
-                    
-                    if "email" not in valid_cols:
-                        st.error("❌ Upload aborted: The file must contain an 'email' or 'email address' column header to map records properly.")
-                        st.session_state.bulk_staged_df = None
-                    else:
-                        new_filtered = new_data[valid_cols].copy()
-                        for col in EXPECTED_COLUMNS:
-                            if col not in new_filtered.columns:
-                                new_filtered[col] = ""
-                        for col in EXPECTED_COLUMNS:
-                            new_filtered[col] = new_filtered[col].apply(clean_cell)
-                        new_filtered["phone"] = new_filtered["phone"].str.replace(r"[\s\-\(\)]+", "", regex=True)
+                    if new_data is not None:
+                        header_map = {
+                            "first name": "fname", "firstname": "fname", "last name": "lname", "lastname": "lname",
+                            "email address": "email", "e-mail": "email", "phone number": "phone", "mobile": "phone",
+                            "cell": "phone", "date of birth": "dob", "birthdate": "dob", "street address": "address",
+                            "street": "address", "zip code": "zip", "postal code": "zip", "zipcode": "zip", "bank name": "bank"
+                        }
+                        new_data.columns = [header_map.get(str(c).strip().lower(), str(c).strip().lower()) for c in new_data.columns]
+                        valid_cols = [c for c in new_data.columns if c in EXPECTED_COLUMNS]
                         
-                        st.session_state.bulk_staged_df = new_filtered
-            else:
-                st.session_state.bulk_staged_df = None
-
-            if st.session_state.bulk_staged_df is not None:
-                st.success(f"📂 File structural matrix verified! Parsed `{len(st.session_state.bulk_staged_df)}` consumer records.")
-                
-                if st.button("💾 Click Here to Sync Uploaded File to Google Sheets Database", type="primary", key="btn_commit_bulk_sync"):
-                    updated_df = st.session_state.crm_data.copy()
-                    new_count = 0
-                    update_count = 0
-                    
+                        if "email" not in valid_cols:
+                            st.error("❌ Upload aborted: The file must contain an 'email' or 'email address' column header to map records properly.")
+                        else:
+                            new_filtered = new_data[valid_cols].copy()
+                            for col in EXPECTED_COLUMNS:
+                                if col not in new_filtered.columns:
+                                    new_filtered[col] = ""
+                            for col in EXPECTED_COLUMNS:
+                                new_filtered[col] = new_filtered[col].apply(clean_cell)
+                            new_filtered["phone"] = new_filtered["phone"].str.replace(r"[\s\-\(\)]+", "", regex=True)
+                            
+                            updated_df = st.session_state.crm_data.copy()
+                            new_count = 0
+                            update_count = 0
+                            
+                            for _, row in new_filtered.iterrows():
+                                email_key = row["email"]

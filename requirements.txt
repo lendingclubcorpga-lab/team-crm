@@ -1,6 +1,6 @@
-streamlit>=1.28.0
-st-gsheets-connection
-pandas
 streamlit
+fpdf2
+python-dateutil
+st-gsheets-connection
 pandas
 openpyxl

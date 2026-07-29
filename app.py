@@ -145,7 +145,6 @@ if current_role in ["Team", "Admin"]:
             st.markdown("### 📤 Bulk Import CSV or Excel Dataset")
             st.write("Rows are matched to existing records by **email** — a matching email updates that row, everything else is appended as a new lead.")
             
-            # FIXED: Set clear_on_submit to False so the file name remains visible during upload checks
             with st.form("bulk_upload_sync_form", clear_on_submit=False):
                 uploaded_file = st.file_uploader("Upload CSV or XLSX", type=["csv", "xlsx"], key="crm_bulk_file_uploader")
                 submit_sync = st.form_submit_button("💾 Save and Sync Uploaded File to Google Sheets Database", type="primary")
@@ -171,7 +170,7 @@ if current_role in ["Team", "Admin"]:
                         valid_cols = [c for c in new_data.columns if c in EXPECTED_COLUMNS]
                         
                         if "email" not in valid_cols:
-                            st.error("❌ Upload aborted: The file must contain an 'email' or 'email address' column header to map records properly.")
+                            st.error("❌ Upload aborted: The file must contain an 'email' or 'email address' column header.")
                         else:
                             new_filtered = new_data[valid_cols].copy()
                             for col in EXPECTED_COLUMNS:
@@ -181,8 +180,11 @@ if current_role in ["Team", "Admin"]:
                                 new_filtered[col] = new_filtered[col].apply(clean_cell)
                             new_filtered["phone"] = new_filtered["phone"].str.replace(r"[\s\-\(\)]+", "", regex=True)
                             
-                            # CRUCIAL INTEGRATION STEP: Re-read the master file directly from Google sheets to prevent overwrite issues
+                            # Fresh load from cloud
                             updated_df = load_sheet()
                             new_count = 0
                             update_count = 0
                             
+                            # FIXED: Strict lowercase and trailing whitespace cleaning to prevent email mismatches
+                            for _, row in new_filtered.iterrows():
+                                email_key = str(row["email"]).strip().lower()

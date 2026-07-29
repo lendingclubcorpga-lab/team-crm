@@ -93,7 +93,6 @@ with tab_upload:
     st.markdown("### 📤 Bulk Import CSV or Excel Data Rows")
     st.write("Uploaded rows are matched against existing records by **email**. Matching profiles will be updated, and fresh entries will be appended to the bottom.")
 
-    # 1. File Uploader sits outside the form logic to process entries in real-time
     uploaded_file = st.file_uploader("Select Spreadsheet File (CSV or XLSX)", type=["csv", "xlsx"], key="file_upload_bucket")
 
     new_filtered = None
@@ -109,7 +108,6 @@ with tab_upload:
             st.error(f"Failed to read file formatting parameters: {e}")
 
         if new_data is not None:
-            # Map columns instantly
             header_map = {
                 "first name": "fname", "firstname": "fname", "last name": "lname", "lastname": "lname",
                 "email address": "email", "e-mail": "email", "phone number": "phone", "mobile": "phone",
@@ -130,16 +128,13 @@ with tab_upload:
                     new_filtered[col] = new_filtered[col].apply(clean_cell)
                 new_filtered["phone"] = new_filtered["phone"].str.replace(r"[\s\-\(\)]+", "", regex=True)
                 
-                # FIXED: Instantly displays row counts to the administrator on upload file drop
                 st.info(f"📂 File verified! Found `{len(new_filtered)}` customer entry rows ready for synchronization.")
 
-    # 2. Form submission wrapper ensures file states do not drop on button click updates
     with st.form("secure_bulk_sync_form", clear_on_submit=False):
         submit_sync = st.form_submit_button("💾 Save and Upload File Directly to Google Sheets", type="primary")
 
         if submit_sync:
             if new_filtered is not None:
-                # Load the current cloud dataset to prevent dirty overrides
                 updated_df = load_sheet()
                 new_count = 0
                 update_count = 0
@@ -153,9 +148,10 @@ with tab_upload:
                     match_idx = updated_df[target_match_series == email_key].index
                     
                     if not match_idx.empty:
+                        # FIXED: Changed .at[] to .loc[] to support index arrays safely and eliminate the InvalidIndexError crash
                         for col in EXPECTED_COLUMNS:
                             if row[col]:
-                                updated_df.at[match_idx, col] = row[col]
+                                updated_df.loc[match_idx, col] = row[col]
                         update_count += 1
                     else:
                         new_lead_row = {col: row[col] for col in EXPECTED_COLUMNS}
@@ -165,7 +161,6 @@ with tab_upload:
                 try:
                     clean_final_df = updated_df[EXPECTED_COLUMNS].copy()
                     
-                    # Force execution write back to remote server Google Sheet link
                     conn.update(worksheet="MASTER FILE ID", data=clean_final_df)
                     st.session_state.crm_data = clean_final_df
                     st.success(f"🚀 Success! Stored directly to your Google Sheet. Updated {update_count} rows and added {new_count} records.")

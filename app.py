@@ -161,7 +161,6 @@ if current_role in ["Team", "Admin"]:
                     st.error(f"Could not read that file: {e}")
 
                 if new_data is not None:
-                    # Clean upload column syntax strings safely
                     header_map = {
                         "first name": "fname", "firstname": "fname", "last name": "lname", "lastname": "lname",
                         "email address": "email", "e-mail": "email", "phone number": "phone", "mobile": "phone",
@@ -170,7 +169,6 @@ if current_role in ["Team", "Admin"]:
                     }
                     new_data.columns = [header_map.get(str(c).strip().lower(), str(c).strip().lower()) for c in new_data.columns]
                     
-                    # Track intersect columns safely
                     valid_cols = [c for c in new_data.columns if c in EXPECTED_COLUMNS]
                     
                     if "email" not in valid_cols:
@@ -178,7 +176,6 @@ if current_role in ["Team", "Admin"]:
                     else:
                         new_filtered = new_data[valid_cols].copy()
                         
-                        # Pad out dataset matrices
                         for col in EXPECTED_COLUMNS:
                             if col not in new_filtered.columns:
                                 new_filtered[col] = ""
@@ -189,5 +186,8 @@ if current_role in ["Team", "Admin"]:
                         
                         st.success(f"📂 File verified! Parsed `{len(new_filtered)}` customer rows.")
                         
-                        # --- FIXED: ADDED THE SAVE AND SYNC PROCESSING BUTTON WIDGET ---
+                        # FIXED: Internal execution statements are now properly indented below the if block
                         if st.button("💾 Click Here to Sync Uploaded File to Google Sheets Database", type="primary", key="btn_commit_bulk_sync"):
+                            updated_df = st.session_state.crm_data.copy()
+                            new_count = 0
+                            update_count = 0

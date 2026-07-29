@@ -187,10 +187,7 @@ if current_role in ["Team", "Admin"]:
                             new_filtered[col] = new_filtered[col].apply(clean_cell)
                         new_filtered["phone"] = new_filtered["phone"].str.replace(r"[\s\-\(\)]+", "", regex=True)
                         
-                        # FIXED: Indentation inside the row parsing loop has been completely repaired
-                        updated_df = st.session_state.crm_data.copy()
-                        new_count = 0
-                        update_count = 0
+                        st.success(f"📂 File verified! Parsed `{len(new_filtered)}` customer rows.")
                         
-                        for _, row in new_filtered.iterrows():
-                            email_key = row["email"]
+                        # --- FIXED: ADDED THE SAVE AND SYNC PROCESSING BUTTON WIDGET ---
+                        if st.button("💾 Click Here to Sync Uploaded File to Google Sheets Database", type="primary", key="btn_commit_bulk_sync"):

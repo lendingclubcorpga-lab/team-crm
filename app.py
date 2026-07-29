@@ -74,15 +74,16 @@ def load_sheet():
     return df[EXPECTED_COLUMNS].reset_index(drop=True)
 
 
-# Keep track of CRM data state in memory
+# Keep track of data states securely across session lifecycles
 if "crm_data" not in st.session_state:
     st.session_state.crm_data = load_sheet()
+if "bulk_staged_df" not in st.session_state:
+    st.session_state.bulk_staged_df = None
 
 # ---------------------------------------------------------------------
 # 4. IMPLEMENT OPERATIONAL INTERFACES
 # ---------------------------------------------------------------------
 if current_role in ["Team", "Admin"]:
-    # Split the main panel into core tabs based on roles
     if current_role == "Team":
         tab_crm, tab_loan = st.tabs(["🔍 Customer Detail Lookup", "🚀 Loan Generation Engine"])
     else:
@@ -123,7 +124,6 @@ if current_role in ["Team", "Admin"]:
                                 full_address = f"{row.get('address', '')}, {row.get('city', '')}, {row.get('state', '')} {row.get('zip', '')}"
                                 st.markdown(f"**📍 Address:**\n{full_address.strip(', ')}")
                             
-                            # Helper Profile Loading Shortcut
                             if st.button(f"⚡ Populate Profile for Underwriting", key=f"pop_{index}"):
                                 st.session_state["pre_fname"] = f_name
                                 st.session_state["pre_lname"] = l_name
@@ -132,7 +132,6 @@ if current_role in ["Team", "Admin"]:
                 else:
                     st.warning("⚠️ No records found matching that phone number or email.")
         else:
-            # Display Admin version of Master Table Directory
             admin_search = st.text_input("Quick Database Filter (Name, Email, or Phone)").strip()
             display_data = st.session_state.crm_data[
                 st.session_state.crm_data["fname"].str.contains(admin_search, case=False, na=False) |
@@ -150,6 +149,7 @@ if current_role in ["Team", "Admin"]:
             
             uploaded_file = st.file_uploader("Upload CSV or XLSX", type=["csv", "xlsx"], key="crm_bulk_file_uploader")
 
+            # --- STAGE AND PERSIST PARSED UPLOADS INTO MEMORY ---
             if uploaded_file is not None:
                 new_data = None
                 try:
@@ -168,26 +168,26 @@ if current_role in ["Team", "Admin"]:
                         "street": "address", "zip code": "zip", "postal code": "zip", "zipcode": "zip", "bank name": "bank"
                     }
                     new_data.columns = [header_map.get(str(c).strip().lower(), str(c).strip().lower()) for c in new_data.columns]
-                    
                     valid_cols = [c for c in new_data.columns if c in EXPECTED_COLUMNS]
                     
                     if "email" not in valid_cols:
                         st.error("❌ Upload aborted: The file must contain an 'email' or 'email address' column header to map records properly.")
+                        st.session_state.bulk_staged_df = None
                     else:
                         new_filtered = new_data[valid_cols].copy()
-                        
                         for col in EXPECTED_COLUMNS:
                             if col not in new_filtered.columns:
                                 new_filtered[col] = ""
-                                
                         for col in EXPECTED_COLUMNS:
                             new_filtered[col] = new_filtered[col].apply(clean_cell)
                         new_filtered["phone"] = new_filtered["phone"].str.replace(r"[\s\-\(\)]+", "", regex=True)
                         
-                        st.success(f"📂 File verified! Parsed `{len(new_filtered)}` customer rows.")
-                        
-                        # FIXED: Internal execution statements are now properly indented below the if block
-                        if st.button("💾 Click Here to Sync Uploaded File to Google Sheets Database", type="primary", key="btn_commit_bulk_sync"):
-                            updated_df = st.session_state.crm_data.copy()
-                            new_count = 0
-                            update_count = 0
+                        # Lock verified data safely into state memory
+                        st.session_state.bulk_staged_df = new_filtered
+            else:
+                st.session_state.bulk_staged_df = None
+
+            # --- PERSISTENT RENDER FOR SYNC PIPELINE RUN ---
+            if st.session_state.bulk_staged_df is not None:
+                st.success(f"📂 File structural matrix verified! Parsed `{len(st.session_state.bulk_staged_df)}` consumer records.")
+                

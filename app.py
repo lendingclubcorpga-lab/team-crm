@@ -149,7 +149,6 @@ if current_role in ["Team", "Admin"]:
             
             uploaded_file = st.file_uploader("Upload CSV or XLSX", type=["csv", "xlsx"], key="crm_bulk_file_uploader")
 
-            # --- STAGE AND PERSIST PARSED UPLOADS INTO MEMORY ---
             if uploaded_file is not None:
                 new_data = None
                 try:
@@ -182,12 +181,15 @@ if current_role in ["Team", "Admin"]:
                             new_filtered[col] = new_filtered[col].apply(clean_cell)
                         new_filtered["phone"] = new_filtered["phone"].str.replace(r"[\s\-\(\)]+", "", regex=True)
                         
-                        # Lock verified data safely into state memory
                         st.session_state.bulk_staged_df = new_filtered
             else:
                 st.session_state.bulk_staged_df = None
 
-            # --- PERSISTENT RENDER FOR SYNC PIPELINE RUN ---
             if st.session_state.bulk_staged_df is not None:
                 st.success(f"📂 File structural matrix verified! Parsed `{len(st.session_state.bulk_staged_df)}` consumer records.")
                 
+                if st.button("💾 Click Here to Sync Uploaded File to Google Sheets Database", type="primary", key="btn_commit_bulk_sync"):
+                    updated_df = st.session_state.crm_data.copy()
+                    new_count = 0
+                    update_count = 0
+                    

@@ -144,11 +144,12 @@ if current_role in ["Team", "Admin"]:
 
     # ---- ADMINISTRATIVE SUB-TABS ----
     if current_role == "Admin":
-        # ---- FIXED FIXED COMPLETED BULK UPLOAD CHANNEL ----
+        # ---- CORE FIX: UPLOADER IS OUTSIDE THE INTERMEDIATE LOGIC LOOPS ----
         with tab_bulk:
-            st.markdown("### 📤 Bulk import a CSV or Excel file")
+            st.markdown("### 📤 Bulk Import CSV or Excel Dataset")
             st.write("Rows are matched to existing records by **email** — a matching email updates that row, everything else is appended as a new lead.")
-            uploaded_file = st.file_uploader("Upload CSV or XLSX", type=["csv", "xlsx"])
+            
+            uploaded_file = st.file_uploader("Upload CSV or XLSX", type=["csv", "xlsx"], key="crm_bulk_file_uploader")
 
             if uploaded_file is not None:
                 new_data = None
@@ -161,7 +162,7 @@ if current_role in ["Team", "Admin"]:
                     st.error(f"Could not read that file: {e}")
 
                 if new_data is not None:
-                    # Clean upload column syntax strings
+                    # Clean upload column syntax strings safely
                     header_map = {
                         "first name": "fname", "firstname": "fname", "last name": "lname", "lastname": "lname",
                         "email address": "email", "e-mail": "email", "phone number": "phone", "mobile": "phone",
@@ -170,24 +171,26 @@ if current_role in ["Team", "Admin"]:
                     }
                     new_data.columns = [header_map.get(str(c).strip().lower(), str(c).strip().lower()) for c in new_data.columns]
                     
-                    # Intersect matching headers to protect sheets from bad structural breaks
+                    # Track intersect columns safely
                     valid_cols = [c for c in new_data.columns if c in EXPECTED_COLUMNS]
                     
                     if "email" not in valid_cols:
-                        st.error("❌ Upload aborted: The file must contain a clear 'email' or 'email address' column header to map customer entries correctly.")
+                        st.error("❌ Upload aborted: The file must contain an 'email' or 'email address' column header to map records properly.")
                     else:
                         new_filtered = new_data[valid_cols].copy()
                         
-                        # Pad out any missing dataset columns to prevent compilation matrix breakage
+                        # Pad out dataset matrices
                         for col in EXPECTED_COLUMNS:
                             if col not in new_filtered.columns:
                                 new_filtered[col] = ""
                                 
-                        # Run string normalization across cell blocks
                         for col in EXPECTED_COLUMNS:
                             new_filtered[col] = new_filtered[col].apply(clean_cell)
                         new_filtered["phone"] = new_filtered["phone"].str.replace(r"[\s\-\(\)]+", "", regex=True)
                         
-                        # Process records through a safe email upsert loop
+                        # Merge loop
                         updated_df = st.session_state.crm_data.copy()
                         new_count = 0
+                        update_count = 0
+                        
+                        for _, row in new_filtered.iterrows():

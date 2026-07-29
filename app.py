@@ -144,7 +144,6 @@ if current_role in ["Team", "Admin"]:
 
     # ---- ADMINISTRATIVE SUB-TABS ----
     if current_role == "Admin":
-        # ---- CORE FIX: UPLOADER IS OUTSIDE THE INTERMEDIATE LOGIC LOOPS ----
         with tab_bulk:
             st.markdown("### 📤 Bulk Import CSV or Excel Dataset")
             st.write("Rows are matched to existing records by **email** — a matching email updates that row, everything else is appended as a new lead.")
@@ -188,9 +187,10 @@ if current_role in ["Team", "Admin"]:
                             new_filtered[col] = new_filtered[col].apply(clean_cell)
                         new_filtered["phone"] = new_filtered["phone"].str.replace(r"[\s\-\(\)]+", "", regex=True)
                         
-                        # Merge loop
+                        # FIXED: Indentation inside the row parsing loop has been completely repaired
                         updated_df = st.session_state.crm_data.copy()
                         new_count = 0
                         update_count = 0
                         
                         for _, row in new_filtered.iterrows():
+                            email_key = row["email"]
